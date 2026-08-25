@@ -32,7 +32,6 @@ import difflib
 import time
 import struct
 import zlib
-import sys
 import shutil
 
 import renpy
@@ -43,24 +42,14 @@ from renpy.compat.pickle import loads, dumps
 # The version of the dumped script.
 script_version = renpy.script_version
 
-# The version of the bytecode cache.
-BYTECODE_VERSION = 1
-
-from importlib.util import MAGIC_NUMBER as PYC_MAGIC
-
-# Change this to force a recompile of Python when required.
-PYC_MAGIC += b"_2025-06-16"
-
 # Change this to force a recompile of RPYC files when required, if the .rpy file exists.
-RPYC_MAGIC = b"_2025-07-06"
+RPYC_MAGIC = b"_2026-08-05"
 
 # A string at the start of each rpycv2 file.
 RPYC2_HEADER = b"RENPY RPC2"
 
-
-# The name of the obsolete and new bytecode cache files.
-OLD_BYTECODE_FILE = "cache/bytecode.rpyb"
-BYTECODE_FILE = "cache/bytecode-{}{}.rpyb".format(sys.version_info.major, sys.version_info.minor)
+# Kept for backwards compatibility.
+BYTECODE_FILE = renpy.python.CompileCache.BYTECODE_FILE
 
 
 class ScriptError(Exception):
@@ -157,21 +146,14 @@ class Script(object):
 
         self.record_pycode = True
 
-        # Bytecode caches.
-        self.bytecode_oldcache = {}
-        self.bytecode_newcache = {}
-        self.bytecode_dirty = False
-
         self.translator = renpy.translation.ScriptTranslator()
-        self.init_bytecode()
 
         self.scan_script_files()
 
         # If recompiling everything, remove orphan .rpyc files.
         # Otherwise, will fail in case orphan .rpyc have same
         # labels as in other scripts (usually happens on script rename).
-        if (renpy.game.args.command == "compile") and not (renpy.game.args.keep_orphan_rpyc):
-
+        if renpy.game.args.compile and not renpy.game.args.keep_orphan_rpyc:
             self.clean_script_files()
 
             # Reindex files so that .rpyc's are cleared out.
@@ -215,7 +197,7 @@ class Script(object):
             return
 
         basename = os.path.basename(renpy.config.basedir)
-        backupdir = renpy.os.path.join(renpy.exports.fsencode(backups), renpy.exports.fsencode(basename))
+        backupdir = renpy.os.path.join(backups, basename)
 
         renpy.exports.write_log("Backing up script files to %r:", backupdir)
 
@@ -245,7 +227,7 @@ class Script(object):
             if not os.path.exists(fn):
                 continue
 
-            short_fn = renpy.exports.fsencode(fn[len(renpy.config.gamedir) + 1 :])
+            short_fn = fn[len(renpy.config.gamedir) + 1 :]
 
             base, ext = os.path.splitext(short_fn)
 
@@ -275,7 +257,6 @@ class Script(object):
         """
 
         for dir, fn in dirlist:
-
             if fn.rpartition("/")[2].startswith("."):
                 continue
 
@@ -337,7 +318,6 @@ class Script(object):
         self.classify_script_files(
             renpy.loader.listdirfiles(common=False, game=True), self.script_files, self.module_files
         )
-
 
     def clean_script_files(self):
         """
@@ -421,11 +401,18 @@ class Script(object):
                 else:
                     sort_key = parts[1]
 
+            priority *= 2
+            if fn >= "A":
+                priority += 1
+
             return (priority, sort_key, fn, dn)
 
         self.script_files.sort(key=game_key)
 
-        return self.common_script_files + self.script_files
+        rv = [(0,) + item for item in self.common_script_files]
+        rv.extend((game_key(item)[0],) + item for item in self.script_files)
+
+        return rv
 
     def load_script(self):
         script_files = self.sort_script_files()
@@ -435,7 +422,14 @@ class Script(object):
         count = 0
         skipped = 0
 
-        for fn, dir in script_files:
+        last_priority = 0
+
+        for priority, fn, dir in script_files:
+            if priority != last_priority:
+                if renpy.parser.has_parse_errors():
+                    skipped += len(script_files) - count
+                    break
+
             count += 1
             renpy.display.presplash.progress("Loading script...", count, len(script_files))
 
@@ -1084,24 +1078,6 @@ class Script(object):
 
         self.digest.update(digest)  # type: ignore
 
-    def init_bytecode(self):
-        """
-        Init/Loads the bytecode cache.
-        """
-
-        if renpy.game.args.compile_python:
-            return
-
-        # Load the oldcache.
-        try:
-            with renpy.loader.load(BYTECODE_FILE) as f:
-                version, cache = loads(zlib.decompress(f.read()))
-                if version == BYTECODE_VERSION:
-                    self.bytecode_oldcache = cache
-
-        except Exception:
-            pass
-
     def update_bytecode(self):
         """
         Compiles the PyCode objects in self.all_pycode, updating the
@@ -1159,26 +1135,6 @@ class Script(object):
                 renpy.game.exception_info = old_ei
 
         self.all_pycode = []
-
-    def save_bytecode(self):
-        if renpy.macapp:
-            return
-
-        if self.bytecode_dirty:
-            try:
-                fn = renpy.loader.get_path(BYTECODE_FILE)
-
-                with open(fn, "wb") as f:
-                    data = (BYTECODE_VERSION, self.bytecode_newcache)
-                    f.write(zlib.compress(dumps(data), 3))
-            except Exception:
-                pass
-
-            fn = renpy.loader.get_path(OLD_BYTECODE_FILE)
-            try:
-                os.unlink(fn)
-            except Exception:
-                pass
 
     def lookup(self, label):
         """

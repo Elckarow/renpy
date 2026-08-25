@@ -39,8 +39,11 @@ import ast as pyast
 # check.
 il_statements = 0
 
-# The deadline for reporting we're not in an infinite loop.
-il_time = 0
+# The first deadline for reporting we're not in an infinite loop.
+il_first_deadline: float = 0
+
+# The second deadline for reporting we're not in an infinite loop.
+il_second_deadline: float = 0.0
 
 
 def check_infinite_loop():
@@ -48,21 +51,31 @@ def check_infinite_loop():
 
     il_statements += 1
 
-    if il_statements <= 1000:
+    if il_statements <= 100:
         return
 
     il_statements = 0
 
-    global il_time
+    global il_first_deadline
+    global il_second_deadline
 
     now = time.time()
 
-    if now > il_time:
-        il_time = now + 60
+    if now < il_first_deadline:
+        il_second_deadline = 0
+        return
+
+    if il_second_deadline == 0:
+        il_second_deadline = now + 1
+
+    if now < il_second_deadline:
+        il_second_deadline = 0
+        il_first_deadline = now + 60
         raise Exception("Possible infinite loop.")
 
-    if renpy.config.developer and (il_time > now + 60):
-        il_time = now + 60
+    if renpy.config.developer and (il_first_deadline > now + 60):
+        il_first_deadline = now + 60
+        il_second_deadline = 0
 
     return
 
@@ -79,8 +92,8 @@ def not_infinite_loop(delay):
     if not renpy.config.developer:
         delay *= 5
 
-    global il_time
-    il_time = time.time() + delay
+    global il_first_deadline
+    il_first_deadline = time.time() + delay
 
 
 class Delete(object):
@@ -927,19 +940,26 @@ class Context(renpy.object.Object):
             self.predict_return_stack = return_stack
 
             try:
-                for n in node.predict():
-                    if n is None:
-                        continue
+                old_statement = renpy.display.predict.statement
+                renpy.display.predict.statement = node
 
-                    if n not in seen:
-                        npi = NewPredictInfo()
-                        npi.node = n
-                        npi.images = self.images
-                        npi.predict_return_stack = self.predict_return_stack
-                        npi.tlids = renpy.display.predict.tlids
+                try:
+                    for n in node.predict():
+                        if n is None:
+                            continue
 
-                        nodes.append(npi)
-                        seen.add(n)
+                        if n not in seen:
+                            npi = NewPredictInfo()
+                            npi.node = n
+                            npi.images = self.images
+                            npi.predict_return_stack = self.predict_return_stack
+                            npi.tlids = renpy.display.predict.tlids
+
+                            nodes.append(npi)
+                            seen.add(n)
+
+                finally:
+                    renpy.display.predict.statement = old_statement
 
             except Exception:
                 if renpy.config.debug_prediction:
@@ -1007,15 +1027,18 @@ class Context(renpy.object.Object):
             self.call_location_stack.append("unknown location")
             self.dynamic_stack.append({})
 
+
 class RestartContext(BaseException):
     """
     Restarts the current context.
     """
 
+
 class RestartTopContext(BaseException):
     """
     Restarts the current context.
     """
+
 
 def run_context(top):
     """

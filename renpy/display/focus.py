@@ -22,6 +22,7 @@
 # This file contains code to manage focus on the display.
 
 from __future__ import division, absolute_import, with_statement, print_function, unicode_literals
+import collections
 from renpy.compat import PY2, basestring, bchr, bord, chr, open, pystr, range, round, str, tobytes, unicode  # *
 
 
@@ -195,6 +196,36 @@ last_tooltip = None
 # Overrides the currently focused displayable.
 override = None
 
+focus_changes_since_event: collections.defaultdict[str|None, int] = collections.defaultdict(int)
+"Counts the number of changes to focus since the last input event."
+
+
+def clear_focus_changes_since_event() -> None:
+    """
+    Clears the count of focus changes since the last input event.
+    """
+
+    focus_changes_since_event.clear()
+
+
+def summarize_focus_changes_since_event() -> str:
+    """
+    Returns a string summarizing the focus changes since the last input event.
+    """
+
+    if not focus_changes_since_event:
+        return ""
+
+    summary = [ ]
+
+    for name, count in focus_changes_since_event.items():
+        if name is None:
+            summary.append(f"focus lost (x{count})")
+        else:
+            summary.append(f"\"{name}\" (x{count})")
+
+    return "Focus changes since last input event: " + ", ".join(summary)
+
 
 def set_focused(widget, arg, screen):
     global argument
@@ -212,7 +243,22 @@ def set_focused(widget, arg, screen):
     else:
         screen_of_focused_names = set()
 
-    renpy.game.context().scene_lists.focused = widget
+    sls = renpy.game.context().scene_lists
+
+    if renpy.config.developer:
+        if widget is sls.focused:
+            pass
+
+        elif widget is not None:
+            try:
+                name = widget._tts_all(True)
+                focus_changes_since_event[name] += 1
+            except Exception as e:
+                pass
+        else:
+            focus_changes_since_event[None] += 1
+
+    sls.focused = widget
 
     renpy.display.tts.displayable(widget)
 
@@ -303,6 +349,7 @@ def take_focuses():
     renpy.display.render.take_focuses(focus_list)
 
     global global_focus
+    old_global_focus = global_focus
     global_focus = None
 
     global grab
@@ -319,7 +366,15 @@ def take_focuses():
     if not grab_found:
         grab = None
 
-    if (global_focus is not None) and (get_focused() is None):
+    currently_focused_displayable = get_focused()
+
+    # There was an old global focus, that is no longer the global focus.
+    if (old_global_focus is not None) and (currently_focused_displayable is old_global_focus.widget):
+        if (global_focus is None) or (global_focus.widget is not old_global_focus.widget):
+            currently_focused_displayable = None
+
+    # Nothing has focus.
+    if (global_focus is not None) and (currently_focused_displayable is None):
         change_focus(global_focus, True)
 
 

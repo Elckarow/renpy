@@ -2,7 +2,7 @@
     import time
 
 testsuite global:
-    before testsuite:
+    after testsuite:
         if not screen "main_menu":
             run MainMenu(confirm=False)
 
@@ -10,12 +10,16 @@ testsuite global:
         exit
 
 
-testsuite default:
+testsuite play_game:
     description "Default project testsuite"
+    parameter language = ["french", None]
 
     setup:
         $ _test.timeout = 4.0
         $ _test.transition_timeout = 0.05
+
+        if eval _preferences.language != language:
+            run Language(language)
 
     before testcase:
         ## Go to the test screen, even if we've crashed in a prior test
@@ -28,28 +32,19 @@ testsuite default:
                 advance until screen "tutorials"
 
     teardown:
-        click "That's enough for now."
+        click "That's enough for now." raw
         advance until screen "main_menu"
-        # click "Quit"
-
-
-    testsuite blank:
-        testcase do_nothing:
-            pass
-
-    testsuite blank2:
-        testcase do_nothing2:
-            pass
+        # click "Quit" raw
 
 
     ## Run the testcases
     testcase player_experience:
         $ preferences.text_cps = 0
 
-        scroll "Bar" until "Player Experience"
-        click "Player Experience"
+        scroll "Bar" until "Player Experience" raw
+        click "Player Experience" raw
         advance until screen "choice"
-        click "Yes."
+        click "Yes." raw
 
         # Dialogue after menu.
         advance
@@ -78,46 +73,45 @@ testsuite default:
         keysym "K_PAGEUP"
         keysym "K_PAGEUP"
 
-        click "No."
+        click "No." raw
         advance until screen "tutorials"
 
-    testcase new_game:
-        scroll "Bar" until "Creating a New Game"
-        click "Creating a New Game"
-        advance until screen "tutorials"
+    testcase advance_till_end_simple:
+        parameter choice_text = [
+            "Creating a New Game", # new_game
+            "Writing Dialogue", # dialogue
+            "Adding Images", # images
+            "Transitions", # transitions
+            "Music and Sound Effects", # music
+            "Positioning Images", # positioning_images
+            "Video Playback", # video
+            "Tools and the Interactive Director", # tools
+            "Building Distributions", # building
+            "Text Tags, Escapes, and Interpolation", # text_tags
+            "Character Objects", # character_objects
+            "Simple Displayables", # simple_displayables
+            "Transforms and Animation", # transforms
+            "Transform Properties",
+            "GUI Customization", # gui_customization
+            "Translations", # translations
+        ]
 
-    testcase dialogue:
-        scroll "Bar" until "Writing Dialogue"
-        click "Writing Dialogue"
-        advance until screen "tutorials"
-
-    testcase images:
-        scroll "Bar" until "Adding Images"
-        click "Adding Images"
-        advance until screen "tutorials"
-
-    testcase transitions:
-        scroll "Bar" until "Transitions"
-        click "Transitions"
-        advance until screen "tutorials"
-
-    testcase music:
-        scroll "Bar" until "Music and Sound Effects"
-        click "Music and Sound Effects"
+        scroll "Bar" until text choice_text raw
+        click text choice_text raw
         advance until screen "tutorials"
 
     testcase choices:
-        scroll "Bar" until "Choices and Python"
-        click "Choices and Python"
+        scroll "Bar" until "Choices and Python" raw
+        click "Choices and Python" raw
         advance until screen "choice"
-        click "Yes, I do."
+        click "Yes, I do." raw
         advance until screen "choice"
-        click "Yes."
+        click "Yes." raw
         advance until screen "tutorials"
 
     testcase input:
-        scroll "Bar" until "Input and Interpolation"
-        click "Input and Interpolation"
+        scroll "Bar" until "Input and Interpolation" raw
+        click "Input and Interpolation" raw
         advance until screen "input"
         type "Tom"
         keysym "K_BACKSPACE"
@@ -127,234 +121,180 @@ testsuite default:
         keysym "K_RETURN"
         advance until screen "tutorials"
 
-    testcase positioning_images:
-        scroll "Bar" until "Positioning Images"
-        click "Positioning Images"
-        advance until screen "tutorials"
-
-    testcase video:
-        scroll "Bar" until "Video Playback"
-        click "Video Playback"
-        advance until screen "tutorials"
-
-
     testcase nvl_mode:
-        scroll "Bar" until "NVL Mode"
-        click "NVL Mode"
+        scroll "Bar" until "NVL Mode" raw
+        click "NVL Mode" raw
         advance until eval ("nvl_menu" in renpy.game.context().modes) # screen "nvl_choice"
-        click "Yes."
-        advance until screen "tutorials"
-
-    testcase tools:
-        scroll "Bar" until "Tools and the Interactive Director"
-        click "Tools and the Interactive Director"
-        advance until screen "tutorials"
-
-        # Not actually testing the various tools yet.
-
-    testcase building:
-        scroll "Bar" until "Building Distributions"
-        click "Building Distributions"
-        advance until screen "tutorials"
-
-    testcase text_tags:
-        scroll "Bar" until "Text Tags, Escapes, and Interpolation"
-        click "Text Tags, Escapes, and Interpolation"
-        advance until screen "tutorials"
-
-    testcase character_objects:
-        scroll "Bar" until "Character Objects"
-        click "Character Objects"
-        advance until screen "tutorials"
-
-    testcase simple_displayables:
-        scroll "Bar" until "Simple Displayables"
-        click "Simple Displayables"
+        click "Yes." raw
         advance until screen "tutorials"
 
     testcase transition_gallery:
         $ _test.transition_timeout = 60.0
 
-        scroll "Bar" until "Transition Gallery"
-        click "Transition Gallery"
+        scroll "Bar" until "Transition Gallery" raw
+        click "Transition Gallery" raw
         advance until screen "choice"
-        click "Simple"
+        click "Simple" raw
         advance until screen "choice"
-        click "ImageDissolve"
+        click "ImageDissolve" raw
         advance until screen "choice"
-        click "MoveTransition"
+        click "MoveTransition" raw
         advance until screen "choice"
-        click "CropMove"
+        click "CropMove" raw
         advance until screen "choice"
-        click "PushMove"
+        click "PushMove" raw
         advance until screen "choice"
-        click "AlphaDissolve"
+        click "AlphaDissolve" raw
         advance until screen "choice"
-        click "something else"
+        click "something else" raw
         advance until screen "tutorials"
 
     testcase position_properties:
-        scroll "Bar" until "Position Properties"
-        click "Position Properties"
+        scroll "Bar" until "Position Properties" raw
+        click "Position Properties" raw
         advance until screen "choice"
-        click "xpos .75 ypos .25"
+        click "xpos .75 ypos .25" raw
         advance until screen "tutorials"
 
     testcase transforms:
-        scroll "Bar" until "Transforms and Animation"
-        click "Transforms and Animation"
+        scroll "Bar" until "Transforms and Animation" raw
+        click "Transforms and Animation" raw
         advance until screen "tutorials"
 
-        scroll "Bar" until "Transform Properties"
-        click "Transform Properties"
-        advance until screen "tutorials"
-
-    testcase gui_customization:
-        scroll "Bar" until "GUI Customization"
-        click "GUI Customization"
+        scroll "Bar" until "Transform Properties" raw
+        click "Transform Properties" raw
         advance until screen "tutorials"
 
     testcase styles:
-        scroll "Bar" until "Styles and Style Properties"
-        click "Styles and Style Properties"
+        scroll "Bar" until "Styles and Style Properties" raw
+        click "Styles and Style Properties" raw
         advance until screen "choice"
-        click "Style basics."
+        click "Style basics." raw
         advance until screen "choice"
-        click "General style properties."
+        click "General style properties." raw
         advance until screen "choice"
-        click "Text style properties."
+        click "Text style properties." raw
         advance until screen "choice"
-        click "Window and Button style properties."
+        click "Window and Button style properties." raw
         advance until screen "choice"
-        click "Bar style properties."
+        click "Bar style properties." raw
         advance until screen "choice"
-        click "Box, Grid, and Fixed style properties."
+        click "Box, Grid, and Fixed style properties." raw
         advance until screen "choice"
-        click "The Displayable Inspector."
+        click "The Displayable Inspector." raw
         advance until screen "choice"
-        click "That's all I want to know."
+        click "That's all I want to know." raw
         advance until screen "tutorials"
 
     testcase screens:
-        scroll "Bar" until "Screen Basics"
-        click "Screen Basics"
+        scroll "Bar" until "Screen Basics" raw
+        click "Screen Basics" raw
         advance until screen "choice"
 
-        click "What screens can do."
+        click "What screens can do." raw
         advance until screen "choice"
-        click "Yes."
+        click "Yes." raw
         advance until screen "choice"
 
-        click "How to show screens."
-        advance until "Since we can't display dialogue at the same time"
+        click "How to show screens." raw
+        advance until "Since we can't display dialogue at the same time" raw
         advance until screen "simple_screen"
-        click "Okay"
+        click "Okay" raw
         advance until screen "choice"
 
-        click "Passing parameters to screens."
+        click "Passing parameters to screens." raw
         advance until screen "parameter_screen"
         ## We need to insist on closing the screen. May have to do with transitions
-        click "Okay" until not screen "parameter_screen"
-        advance until "The call screen statement can also take arguments"
+        click "Okay" raw until not screen "parameter_screen"
+        advance until "The call screen statement can also take arguments" raw
         advance until screen "parameter_screen"
-        click "Okay"
+        click "Okay" raw
         advance until screen "choice"
 
-        click "Screen properties."
+        click "Screen properties." raw
         advance until screen "modal_example"
         ## We need to insist on closing the screen. May have to do with transitions
-        click "Close This Screen" until not screen "modal_example"
+        click "Close This Screen" raw until not screen "modal_example"
         advance until screen "choice"
 
-        click "Special screen statements."
+        click "Special screen statements." raw
         advance until screen "choice"
 
-        click "Using other screens."
+        click "Using other screens." raw
         advance until screen "choice"
 
-        click "That's it."
+        click "That's it." raw
 
 
     testcase screen_displayables:
-        scroll "Bar" until "Screen Displayables"
-        click "Screen Displayables"
+        scroll "Bar" until "Screen Displayables" raw
+        click "Screen Displayables" raw
         advance until screen "choice"
-        click "Common properties"
+        click "Common properties" raw
         advance until screen "choice"
-        click "Adding images"
+        click "Adding images" raw
         advance until screen "choice"
-        click "Text"
+        click "Text" raw
         advance until screen "choice"
-        click "Buttons"
+        click "Buttons" raw
         advance until screen "choice"
-        click "Bars"
+        click "Bars" raw
         advance until screen "choice"
-        click "Viewports"
+        click "Viewports" raw
         advance until screen "choice"
-        click "Imagemaps"
+        click "Imagemaps" raw
         advance until screen "imagemap_example"
-        click "Science"
+        click "Science" raw
         advance until screen "choice"
-        click "That's all"
+        click "That's all" raw
 
         advance until screen "tutorials"
 
-    testcase translations:
-        scroll "Bar" until "Translations"
-        click "Translations"
-        advance until screen "tutorials"
+testcase out_of_game:
+    run Start()
 
+    $ _preferences.self_voicing = False
+    $ _preferences.afm_time = 1
 
-    testcase out_of_game:
-        click "Back"
-        click "Back"
+    click "Auto" raw
+    scroll "Bar" until "Player Experience" raw
+    click "Player Experience" raw
+    click "Auto" raw
+    click "History" raw
 
-        click "Skip"
+    pause .5
 
-        click "Back"
+    click "Save" raw
+    pause .5
 
-        $ _preferences.self_voicing = False
-        $ _preferences.afm_time = 1
+    click id "save_slot_1"
+    pause 0.2
+    if screen "confirm":
+        click id "confirm_yes_button" until not screen "confirm"
 
-        click "Auto"
-        scroll "Bar" until "Player Experience"
-        click "Player Experience"
-        click "Auto"
-        click "History"
+    click "Load" raw
+    pause .5
 
-        pause .5
+    click id "save_slot_1"
+    click id "confirm_yes_button" until not screen "confirm"
 
-        click "Save"
-        pause .5
+    click "Prefs" raw
+    pause .5
 
-        click "Save Slot 1"
-        pause 0.2
-        if "Yes":
-            click "Yes"
+    click "About" raw
+    pause .5
 
-        click "Load"
-        pause .5
+    click "Help" raw
+    pause .5
 
-        click "Load Slot 1"
-        click "Yes"
+    click "Main Menu" raw
+    click id "confirm_yes_button" until not screen "confirm"
 
-        click "Prefs"
-        pause .5
+    click "Load" raw
+    pause .5
 
-        click "About"
-        pause .5
+    click id "save_slot_1"
 
-        click "Help"
-        pause .5
-
-        click "Main Menu"
-        click "Yes"
-
-        click "Load"
-        pause .5
-
-        click "Load Slot 1"
-
-        advance until screen "choice"
-        click "Yes."
-        advance until screen "tutorials"
+    advance until screen "choice"
+    click "Yes." raw
+    advance until screen "tutorials"

@@ -313,16 +313,15 @@ def textwrap(s, width=78, asian=False):
 
 def thaic90(s):
     """
-    Reencodes `s` to the Thai C90 encoding, which is used by Thai-specific
-    fonts to combine base characters, upper vowels, lower vowls, and tone marks
-    into singe precomposed characters in the unicode private use area.
+    Reencodes `s` to the Thai C90 encoding, a legacy font-specific scheme
+    used to render Thai text with correct glyph positioning in C90-compatible fonts
+    by mapping character sequences to PUA glyph code points.
     """
 
     # Copyright (c) 2021 SahabandhSthabara, Saamkhaih Kyakya
     # MIT License.
-    # Taken from https://gitlab.com/sahabandha/renpy-thai-font-adjuster/-/blob/main/renpythaic90.py
+    # Taken from https://gitlab.com/sahabandha/renpy-thai-font-adjuster/
 
-    # http://www.bakoma-tex.com/doc/fonts/enc/c90/c90.pdf
     # ========== EXTENDED CHARACTER TABLE ==========
     # F700:     uni0E10.descless    (base.descless)
     # F701~04:  uni0E34~37.left     (upper.left)
@@ -334,122 +333,88 @@ def thaic90(s):
     # F718~1A:  uni0E38~3A.low      (lower.low)
     # ==============================================
 
-    def isBase(c):
-        return ("\u0e01" <= c <= "\u0e30") or c == "\u0e30" or c == "\u0e40" or c == "\u0e41"
-
-    def isBaseAsc(c):
-        return c == "\u0e1b" or c == "\u0e1d" or c == "\u0e1f" or c == "\u0e2c"
-
-    def isBaseDesc(c):
-        return c == "\u0e0e" or c == "\u0e0f"
-
-    def isTop(c):
-        # Tone Mark, THANTHAKHAT
-        if "\u0e48" <= c <= "\u0e4c":
-            return True
-
-    def isLower(c):
-        # SARA U, SARA UU, PHINTHU
-        return c >= "\u0e38" and c <= "\u0e3a"
-
-    def isUpper(c):
-        return (
-            c == "\u0e31"
-            or c == "\u0e34"
-            or c == "\u0e35"
-            or c == "\u0e36"
-            or c == "\u0e37"
-            or c == "\u0e47"
-            or c == "\u0e4d"
-        )
-
-    rv = []
-
-    # [sara am] -> [nikhahit] [sara aa]
-    s = s.replace("\u0e33", "\u0e4d\u0e32")
-    s = s.replace("\u0e48\u0e4d", "\u0e4d\u0e48")
-    s = s.replace("\u0e49\u0e4d", "\u0e4d\u0e49")
-    s = s.replace("\u0e4a\u0e4d", "\u0e4d\u0e4a")
-    s = s.replace("\u0e4b\u0e4d", "\u0e4d\u0e4b")
-    s = s.replace("\u0e4c\u0e4d", "\u0e4d\u0e4c")
-
+    # Precompute lookup tables
+    TOP_LEFT = str.maketrans("\u0e48\u0e49\u0e4a\u0e4b\u0e4c", "\uf713\uf714\uf715\uf716\uf717")
+    TOP_LOWLEFT = str.maketrans("\u0e48\u0e49\u0e4a\u0e4b\u0e4c", "\uf705\uf706\uf707\uf708\uf709")
+    TOP_LOW = str.maketrans("\u0e48\u0e49\u0e4a\u0e4b\u0e4c", "\uf70a\uf70b\uf70c\uf70d\uf70e")
+    UPPER_LEFT = str.maketrans(
+        "\u0e31\u0e34\u0e35\u0e36\u0e37\u0e4d\u0e47", "\uf710\uf701\uf702\uf703\uf704\uf711\uf712"
+    )
+    LOWER_DESC = str.maketrans("\u0e38\u0e39\u0e3a", "\uf718\uf719\uf71a")
+    UPPER = frozenset("\u0e31\u0e34\u0e35\u0e36\u0e37\u0e47\u0e4d")
+    BASE_ASC = frozenset("\u0e1b\u0e1d\u0e1f\u0e2c")
+    BASE_DESC = frozenset("\u0e0e\u0e0f")
+    result: list[str] = []
     length = len(s)
-    for z in range(length):
+    z = 0
+    while z < length:
         c = s[z]
+        if c == "\u0e33":
+            base = ""
+            if z >= 2 and "\u0e38" <= s[z - 1] <= "\u0e3a":
+                base = s[z - 2]
+            elif z >= 1:
+                base = s[z - 1]
 
-        #  [base] ~ [top]
-        if isTop(c) and z > 0:
-            # [base]             [top] -> [base]             [top.low]
-            # [base]     [lower] [top] -> [base]     [lower] [top.low]
-            # [base.asc]         [top] -> [base.asc]         [top.lowleft]
-            # [base.asc] [lower] [top] -> [base.asc] [lower] [top.lowleft]
-            b = s[z - 1]
-            if isLower(b) and z > 0:
-                b = s[z - 2]
-            if isBase(b):
-                Nikhahit = z < length - 1 and (s[z + 1] == "\u0e33" or s[z + 1] == "\u0e4d")
-                if isBaseAsc(b):
-                    if Nikhahit:
-                        # [base.asc] [nikhahit] [top] -> [base.asc] [nikhahit] [top.left]
-                        choices = {
-                            "\u0e48": "\uf713",
-                            "\u0e49": "\uf714",
-                            "\u0e4a": "\uf715",
-                            "\u0e4b": "\uf716",
-                            "\u0e4c": "\uf717",
-                        }
-                        c = choices.get(c, "error")
+            if base in BASE_ASC:
+                result.append("\uf711")
+            else:
+                result.append("\u0e4d")
+            result.append("\u0e32")
+            z += 1
+            continue
+        if "\u0e48" <= c <= "\u0e4c" and z > 0:
+            prev = s[z - 1]
+            prev2 = s[z - 2] if z > 1 else ""
+            base = s[z - 2] if z >= 2 and "\u0e38" <= prev <= "\u0e3a" else prev
+            if z + 1 < length:
+                next_c = s[z + 1]
+                if next_c == "\u0e4d":
+                    if base in BASE_ASC:
+                        result.append("\uf711")
+                        result.append(c.translate(TOP_LEFT))
                     else:
-                        choices = {
-                            "\u0e48": "\uf705",
-                            "\u0e49": "\uf706",
-                            "\u0e4a": "\uf707",
-                            "\u0e4b": "\uf708",
-                            "\u0e4c": "\uf709",
-                        }
-                        c = choices.get(c, "error")
+                        result.append("\u0e4d")
+                        result.append(c)
+                    z += 2
+                    continue
+                if next_c == "\u0e33":
+                    if base in BASE_ASC:
+                        result.append("\uf711")
+                        result.append(c.translate(TOP_LEFT))
+                    else:
+                        result.append("\u0e4d")
+                        result.append(c)
+                    result.append("\u0e32")
+                    z += 2
+                    continue
+            if prev in UPPER:
+                if prev2 in BASE_ASC:
+                    result.append(c.translate(TOP_LEFT))
                 else:
-                    if Nikhahit == False:
-                        choices = {
-                            "\u0e48": "\uf70a",
-                            "\u0e49": "\uf70b",
-                            "\u0e4a": "\uf70c",
-                            "\u0e4b": "\uf70d",
-                            "\u0e4c": "\uf70e",
-                        }
-                        c = choices.get(c, "error")
-            # [base.asc] [upper] [top] -> [base.asc] [upper] [top.left]
-            if z > 1 and isUpper(s[z - 1]) and isBaseAsc(s[z - 2]):
-                choices = {
-                    "\u0e48": "\uf713",
-                    "\u0e49": "\uf714",
-                    "\u0e4a": "\uf715",
-                    "\u0e4b": "\uf716",
-                    "\u0e4c": "\uf717",
-                }
-                c = choices.get(c, "error")
-        # [base.asc] [upper] -> [base.asc] [upper-left]
-        elif isUpper(c) and z > 0 and isBaseAsc(s[z - 1]):
-            choices = {
-                "\u0e31": "\uf710",
-                "\u0e34": "\uf701",
-                "\u0e35": "\uf702",
-                "\u0e36": "\uf703",
-                "\u0e37": "\uf704",
-                "\u0e4d": "\uf711",
-                "\u0e47": "\uf712",
-            }
-            c = choices.get(c, "error")
-        elif isLower(c) and z > 0 and isBaseDesc(s[z - 1]):
-            choices = {"\u0e38": "\uf718", "\u0e39": "\uf719", "\u0e3a": "\uf71a"}
-            c = choices.get(c, "error")
-        elif c == "\u0e0d" and z < length - 1 and isLower(s[z + 1]):
-            c = "\uf70f"
-        elif c == "\u0e10" and z < length - 1 and isLower(s[z + 1]):
-            c = "\uf700"
-        else:
-            c = s[z]
-
-        rv.append(c)
-
-    return "".join(rv)
+                    result.append(c)
+            elif base in BASE_ASC:
+                result.append(c.translate(TOP_LOWLEFT))
+            else:
+                result.append(c.translate(TOP_LOW))
+            z += 1
+            continue
+        elif c in UPPER and z > 0 and s[z - 1] in BASE_ASC:
+            result.append(c.translate(UPPER_LEFT))
+            z += 1
+            continue
+        elif "\u0e38" <= c <= "\u0e3a" and z > 0 and s[z - 1] in BASE_DESC:
+            result.append(c.translate(LOWER_DESC))
+            z += 1
+            continue
+        elif c == "\u0e0d" and z < length - 1 and "\u0e38" <= s[z + 1] <= "\u0e3a":
+            result.append("\uf70f")
+            z += 1
+            continue
+        elif c == "\u0e10" and z < length - 1 and "\u0e38" <= s[z + 1] <= "\u0e3a":
+            result.append("\uf700")
+            z += 1
+            continue
+        result.append(c)
+        z += 1
+    return "".join(result)

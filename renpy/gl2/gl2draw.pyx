@@ -28,15 +28,14 @@ DEF ANGLE = False
 
 from libc.stdlib cimport malloc, free
 from libc.math cimport roundf
-from sdl2 cimport *
+from renpy.pygame.sdl cimport *
 from renpy.uguu.gl cimport *
 import renpy.gl2.gl2functions
 
-from renpy.pygame.surface cimport PySurface_AsSurface
+from renpy.pygame.surface cimport Surface
 
 import renpy
 import renpy.pygame as pygame
-from renpy.pygame import Surface
 
 import os
 import os.path
@@ -50,7 +49,7 @@ import renpy.uguu.gl as uguugl
 
 cimport renpy.display.render as render
 from renpy.display.render cimport Render, MATRIX_PROJECTION, MATRIX_VIEW, MATRIX_MODEL
-from renpy.display.matrix cimport Matrix
+from renpy.display.matrix cimport Matrix, MatrixStack
 
 cimport renpy.gl2.gl2texture as gl2texture
 
@@ -60,7 +59,9 @@ from renpy.gl2.gl2polygon cimport Polygon
 from renpy.gl2.gl2model cimport GL2Model
 
 from renpy.gl2.gl2texture import Texture, TextureLoader
+from renpy.gl2.gl2shader cimport Program
 from renpy.gl2.gl2shadercache import ShaderCache
+from renpy.gl2.gl2statecache cimport GLStateCache
 
 try:
     import emscripten
@@ -120,7 +121,7 @@ cdef class GL2Draw:
         self.display_info = None
 
         # The DPI scale factor.
-        self.dpi_scale = renpy.display.interface.dpi_scale
+        self.dpi_scale = pygame.display.get_display_content_scale()
 
         # The number of frames to draw fast if the screen needs to be
         # updated.
@@ -128,6 +129,8 @@ cdef class GL2Draw:
 
         # The shader cache,
         self.shader_cache = None
+
+        self.state_cache = GLStateCache()
 
         # Has the position of this window ever been set?
         self.ever_set_position = False
@@ -192,7 +195,7 @@ cdef class GL2Draw:
         visible_h = info.current_h
 
         # Determine the visible area of the current head.
-        bounds = pygame.display.get_display_bounds(0)
+        bounds = pygame.display.get_display_bounds()[0]
 
         renpy.display.log.write("primary display bounds: %r", bounds)
 
@@ -291,13 +294,13 @@ cdef class GL2Draw:
 
         if gles:
             pygame.display.hint("SDL_OPENGL_ES_DRIVER", "1")
-            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3);
-            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 0);
+            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
+            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 0)
             pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_ES)
         else:
             pygame.display.hint("SDL_OPENGL_ES_DRIVER", "0")
-            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 2);
-            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 0);
+            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 2)
+            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 0)
             pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_COMPATIBILITY)
 
         if renpy.config.gl_set_attributes is not None:
@@ -371,6 +374,8 @@ cdef class GL2Draw:
         else:
             physical_size = renpy.game.preferences.physical_size
 
+        self.dpi_scale = pygame.display.get_display_content_scale()
+
         pwidth, pheight = self.select_physical_size(physical_size)
 
         if renpy.android or renpy.ios:
@@ -414,14 +419,14 @@ cdef class GL2Draw:
             gles = True
 
         elif renpy.ios:
-            window_flags |= pygame.WINDOW_ALLOW_HIGHDPI | pygame.RESIZABLE
+            window_flags |= pygame.WINDOW_HIGH_PIXEL_DENSITY | pygame.RESIZABLE
             pwidth = 0
             pheight = 0
             gles = True
 
         else:
-            if self.dpi_scale == 1.0:
-                window_flags |= pygame.WINDOW_ALLOW_HIGHDPI
+            if not renpy.windows or renpy.config.windows_high_pixel_density:
+                window_flags |= pygame.WINDOW_HIGH_PIXEL_DENSITY
 
             if renpy.config.gl_resize:
                 window_flags |= pygame.RESIZABLE
@@ -537,7 +542,7 @@ cdef class GL2Draw:
                 self.shader_cache.clear()
 
         if full_reset:
-            if pygame.display.get_window().recreate_gl_context(always=renpy.emscripten):
+            if pygame.display.get_window().recreate_gl_context() or renpy.emscripten:
                 renpy.display.interface.kill_textures()
 
         # Are we in fullscreen mode?
@@ -697,12 +702,53 @@ cdef class GL2Draw:
         size = renpy.display.core.get_size()
         drawable_size = pygame.display.get_drawable_size()
 
+        dpi_changed = False
+
+        window_display_scale = pygame.display.get_window_display_scale()
+
+        if window_display_scale is None or window_display_scale <= 0.0:
+            window_display_scale = 1.0
+
+        window_pixel_density = pygame.display.get_window_pixel_density()
+
+        if window_pixel_density is None or window_pixel_density <= 0.0:
+            window_pixel_density = 1.0
+
+        window_dpi_scale = window_display_scale / window_pixel_density
+
+
+
+        dpi_changed = window_dpi_scale != self.dpi_scale
+
+        if dpi_changed:
+            if not fullscreen and not maximized and self.physical_size is not None:
+                logical_width, logical_height = self.get_physical_size()
+                target_size = (
+                    round(logical_width * window_dpi_scale),
+                    round(logical_height * window_dpi_scale),
+                )
+
+                self.dpi_scale = window_dpi_scale
+
+                if target_size != size:
+                    pygame.display.get_window().resize(
+                        target_size,
+                        opengl=True,
+                        fullscreen=False,
+                        maximized=False,
+                    )
+                    size = renpy.display.core.get_size()
+                    drawable_size = pygame.display.get_drawable_size()
+            else:
+                self.dpi_scale = window_dpi_scale
+
         if (
             (force) or
             (fullscreen != renpy.display.interface.fullscreen) or
             (size != self.physical_size) or
             (drawable_size != self.drawable_size) or
-            (self.maximized != maximized)
+            (self.maximized != maximized) or
+            dpi_changed
         ):
 
             self.maximized = maximized
@@ -753,12 +799,12 @@ cdef class GL2Draw:
         cdef GLint max_texture_size
 
         # Store the default FBO.
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, <GLint *> &self.default_fbo);
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, <GLint *> &self.default_fbo)
         self.current_fbo = self.default_fbo
 
         # Store the default RBO
         cdef GLuint default_renderbuffer
-        glGetIntegerv(GL_RENDERBUFFER_BINDING, <GLint *> &default_renderbuffer);
+        glGetIntegerv(GL_RENDERBUFFER_BINDING, <GLint *> &default_renderbuffer)
 
         # Generate the framebuffer.
         glGenFramebuffers(1, &self.fbo)
@@ -1010,8 +1056,10 @@ cdef class GL2Draw:
         if surf is None:
             return
 
+        texture_transform = MatrixStack([1, 0, 0, 1])
+
         # Load all the textures and RTTs.
-        self.load_all_textures(surf)
+        self.load_all_textures(surf, texture_transform)
 
         # Switch to the right FBO, and the right viewport.
         if screenshot:
@@ -1044,25 +1092,30 @@ cdef class GL2Draw:
 
         # Set up the default modes.
         glEnable(GL_BLEND)
-        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
         # Use the context to draw the render tree.
-        draw_render(surf, w, h, transform)
+        draw_render(surf, w, h, transform, self.state_cache)
 
         if flip:
             self.flip()
             self.texture_loader.cleanup()
 
-    def load_all_textures(self, what):
+    def load_all_textures(self, what, MatrixStack reverse):
         """
         This loads all textures from the surface tree before drawing to
         the actual framebuffer. This is responsible for walking the
         surface tree, and loading framebuffers and texture.
+
+        `reverse`
+             A MatrixStack that transforms from the model space to the drawable space. This is used to determine the
+             size of the textures to create when rendering to a texture, in some cases. This is only used to get the
+             size right, the position and rotation may or may not be correct.
+
         """
 
-        if isinstance(what, Surface):
+        if isinstance(what, pygame.Surface):
             what = self.load_texture(what)
-            self.load_all_textures(what)
+            self.load_all_textures(what, reverse)
             return
 
         if isinstance(what, GL2Model):
@@ -1080,12 +1133,15 @@ cdef class GL2Draw:
 
         r.loaded = True
 
+        if r.reverse is not None:
+            reverse = reverse.get_child().inplace_multiply(r.reverse)
+
         # Load the child textures.
         # This needs to be outside of r.mesh, as it handles all uniform texture loading,
         # even if uniforms isn't used.
 
         for c in r.children:
-            self.load_all_textures(c[0])
+            self.load_all_textures(c[0], reverse)
 
         # If we have a mesh (or mesh=True), create the GL2Model.
         if r.mesh:
@@ -1102,7 +1158,7 @@ cdef class GL2Draw:
 
                 for k, v in r.uniforms.items():
                     if isinstance(v, Render):
-                        self.load_all_textures(v)
+                        self.load_all_textures(v, reverse)
                         uniforms[k] = ctex = self.render_to_texture(v, properties=r.properties)
                         uniforms.setdefault(k + "_res", (ctex.texture_width, ctex.texture_height))
                     else:
@@ -1116,8 +1172,16 @@ cdef class GL2Draw:
                 r.shaders,
                 uniforms)
 
+            tx, ty = reverse.transform(1, 1)
+            oversample = math.hypot(tx, ty) / math.hypot(1, 1)
+
+            if r.properties is not None:
+                oversample *= r.properties.get("mesh_oversample_scale", 1.0)
+
+            oversample = max(1.0, min(oversample, renpy.config.mesh_oversample))
+
             for i, c in enumerate(r.children):
-                model.set_texture(i, self.render_to_texture(c[0], properties=r.properties))
+                model.set_texture(i, self.render_to_texture(c[0], properties=r.properties, oversample=oversample))
 
             if r.mesh is True:
                 tex = model.get_texture(0)
@@ -1136,10 +1200,10 @@ cdef class GL2Draw:
         elif r.uniforms_has_render:
             for v in r.uniforms.values():
                 if isinstance(v, Render):
-                    self.load_all_textures(v)
+                    self.load_all_textures(v, reverse)
                     self.render_to_texture(v, properties=r.properties)
 
-    def render_to_texture(self, what, alpha=True, properties={}):
+    def render_to_texture(self, what, alpha=True, properties={}, oversample=1.0):
         """
         Renders `what` to a texture. The texture will have the drawable
         size of `what`.
@@ -1151,9 +1215,11 @@ cdef class GL2Draw:
         else:
             need_mipmap = properties.get("mipmap", False)
 
-        if isinstance(what, Surface):
+        if isinstance(what, pygame.Surface):
             what = self.load_texture(what)
-            self.load_all_textures(what)
+
+            texture_transform = MatrixStack([1, 0, 0, 1])
+            self.load_all_textures(what, texture_transform)
 
         if isinstance(what, Texture):
             if need_mipmap:
@@ -1165,7 +1231,7 @@ cdef class GL2Draw:
                 what.cached_texture.add_mipmap()
             return what.cached_texture
 
-        rv = self.texture_loader.render_to_texture(what, properties)
+        rv = self.texture_loader.render_to_texture(what, properties, oversample)
         what.cached_texture = rv
 
         return rv
@@ -1179,7 +1245,9 @@ cdef class GL2Draw:
         """
 
         # Load all the textures and RTTs.
-        self.load_all_textures(what)
+
+        texture_transform = MatrixStack([1, 0, 0, 1])
+        self.load_all_textures(what, texture_transform)
 
         # Switch to the right FBO, and the right viewport.
         self.change_fbo(self.fbo_1px)
@@ -1198,10 +1266,9 @@ cdef class GL2Draw:
 
         # Set up the default modes.
         glEnable(GL_BLEND)
-        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
         # Use the context to draw the surface tree.
-        draw_render(what, 1, 1, transform)
+        draw_render(what, 1, 1, transform, self.state_cache)
 
         cdef unsigned char pixel[4]
         glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel)
@@ -1281,7 +1348,7 @@ cdef class GL2Draw:
             sw, sh = self.drawable_size
 
         full = renpy.display.pgrender.surface_unscaled((sw, sh), True)
-        surf = PySurface_AsSurface(full)
+        surf = (<Surface> full).sdl_surface
 
         # Create an array that can hold densely-packed pixels.
         raw_pixels = <unsigned char *> malloc(surf.w * surf.h * 4)
@@ -1431,6 +1498,7 @@ cdef class GL2DrawingContext:
         rv.width = self.width
         rv.height = self.height
         rv.debug = self.debug
+        rv.state_cache = self.state_cache
 
         rv.projection_matrix.ctake(self.projection_matrix)
         rv.view_matrix.ctake(self.view_matrix)
@@ -1466,7 +1534,7 @@ cdef class GL2DrawingContext:
         rv.pop("pixel_perfect", None)
         return rv
 
-    def merge_uniforms(self, dict uniforms):
+    cpdef void merge_uniforms(self, dict uniforms):
         """
         Merges the child uniforms into the current uniforms.
         """
@@ -1475,11 +1543,19 @@ cdef class GL2DrawingContext:
             self.uniforms = uniforms
             return
 
+        cdef dict config_merge = renpy.config.merge_uniforms
+
         self.uniforms = dict(self.uniforms)
 
+        # When config.merge_uniforms is empty (the default), a plain update avoids the per-key membership tests.
+        if not config_merge:
+            self.uniforms.update(uniforms)
+
+            return
+
         for k, v in uniforms.items():
-            if (k in self.uniforms) and (k in renpy.config.merge_uniforms):
-                self.uniforms[k] = renpy.config.merge_uniforms[k](self.uniforms[k], v)
+            if (k in self.uniforms) and (k in config_merge):
+                self.uniforms[k] = config_merge[k](self.uniforms[k], v)
             else:
                 self.uniforms[k] = v
 
@@ -1497,14 +1573,13 @@ cdef class GL2DrawingContext:
         halfwidth = self.width / 2.0
         halfheight = self.height / 2.0
 
-        sx = 0
-        sy = 0
-        sz = 0
-        sw = 1
+        sx = self.model_matrix.xdw
+        sy = self.model_matrix.ydw
+        sz = self.model_matrix.zdw
+        sw = self.model_matrix.wdw
 
-        self.model_matrix.transform4(&sx, &sy, &sz, &sw, sx, sy, sz, sw)
-        self.view_matrix.transform4(&sx, &sy, &sz, &sw, sx, sy, sz, sw)
-        self.projection_matrix.transform4(&sx, &sy, &sz, &sw, sx, sy, sz, sw)
+        # Apply the view and projection matrices in one step using the premultiplied projectionview matrix.
+        self.projectionview_matrix.transform4(&sx, &sy, &sz, &sw, sx, sy, sz, sw)
 
         sx = roundf(sx * 10000) / 10000
         sy = roundf(sy * 10000) / 10000
@@ -1546,7 +1621,10 @@ cdef class GL2DrawingContext:
             self.model_matrix.inplace_multiply(model.reverse)
 
         if model.shaders:
-            self.shaders = self.shaders + model.shaders
+            if self.shaders:
+                self.shaders = self.shaders + model.shaders
+            else:
+                self.shaders = model.shaders
 
         if model.uniforms:
             self.merge_uniforms(model.uniforms)
@@ -1555,7 +1633,7 @@ cdef class GL2DrawingContext:
             import renpy.gl2.gl2debug as gl2debug
             gl2debug.geometry(mesh, self.view_matrix * self.model_matrix, 1, 1)
 
-        program = gl2draw.shader_cache.get(self.shaders)
+        cdef Program program = gl2draw.shader_cache.get(self.shaders)
 
         program.draw(self, model, mesh)
 
@@ -1628,7 +1706,7 @@ cdef class GL2DrawingContext:
                 ctx.draw_model(what)
                 return
 
-            if isinstance(what, Surface):
+            if isinstance(what, pygame.Surface):
                 what = (<GL2Draw> renpy.display.draw).load_texture(what)
 
         cdef Render r = what
@@ -1680,30 +1758,17 @@ cdef class GL2DrawingContext:
             self.pixel_perfect = False
 
         if r.shaders is not None:
-            self.shaders = self.shaders + r.shaders
-
-        children = r.children
+            if self.shaders:
+                self.shaders = self.shaders + r.shaders
+            else:
+                self.shaders = r.shaders
 
         if r.cached_model is not None:
-            children = [ (r.cached_model, 0, 0, False, False) ]
-        else:
-            if r.uniforms:
-                self.merge_uniforms(r.uniforms)
+            if not has_reverse: # fast path: with no reverse transform, the model can be drawn directly
+                self.draw_model(r.cached_model)
+            else:
+                ctx = self.child_context()
 
-        for child, cx, cy, focus, main in children:
-
-            ctx = self.child_context()
-
-            if (cx or cy):
-                if type(cx) is not int:
-                    ctx.pixel_perfect = False
-
-                ctx.model_matrix.inplace_offset(cx, cy)
-
-                if ctx.clip_polygon is not None:
-                    ctx.clip_polygon = ctx.clip_polygon.offset(-cx, -cy)
-
-            if has_reverse:
                 ctx.model_matrix.inplace_multiply(r.reverse)
 
                 if r.matrix_kind == MATRIX_PROJECTION:
@@ -1725,7 +1790,49 @@ cdef class GL2DrawingContext:
                 if ctx.clip_polygon is not None:
                     ctx.clip_polygon = ctx.clip_polygon.multiply_matrix(r.forward)
 
-            ctx.draw_one(child)
+                ctx.draw_model(r.cached_model)
+
+        else:
+            if r.uniforms:
+                self.merge_uniforms(r.uniforms)
+
+            children = r.children
+
+            for child, cx, cy, focus, main in children:
+                ctx = self.child_context()
+
+                if (cx or cy):
+                    if type(cx) is not int:
+                        ctx.pixel_perfect = False
+
+                    ctx.model_matrix.inplace_offset(cx, cy)
+
+                    if ctx.clip_polygon is not None:
+                        ctx.clip_polygon = ctx.clip_polygon.offset(-cx, -cy)
+
+                if has_reverse:
+                    ctx.model_matrix.inplace_multiply(r.reverse)
+
+                    if r.matrix_kind == MATRIX_PROJECTION:
+                        ctx.projection_matrix.inplace_multiply(ctx.view_matrix)
+                        ctx.projection_matrix.inplace_multiply(ctx.model_matrix)
+
+                        ctx.view_matrix.ctake(IDENTITY)
+                        ctx.model_matrix.ctake(IDENTITY)
+
+                        ctx.projectionview_matrix.ctake(ctx.projection_matrix)
+
+                    elif r.matrix_kind == MATRIX_VIEW:
+                        ctx.view_matrix.inplace_multiply(ctx.model_matrix)
+                        ctx.model_matrix.ctake(IDENTITY)
+
+                        ctx.projectionview_matrix.ctake(ctx.projection_matrix)
+                        ctx.projectionview_matrix.inplace_multiply(ctx.view_matrix)
+
+                    if ctx.clip_polygon is not None:
+                        ctx.clip_polygon = ctx.clip_polygon.multiply_matrix(r.forward)
+
+                ctx.draw_one(child)
 
         if has_depth:
             glDisable(GL_DEPTH_TEST)
@@ -1737,7 +1844,7 @@ cdef class GL2DrawingContext:
 root_context = GL2DrawingContext()
 
 
-def draw_render(what, int drawable_width, int drawable_height, Matrix projection, invert_front_face: bool = False):
+def draw_render(what, int drawable_width, int drawable_height, Matrix projection, GLStateCache state_cache, invert_front_face: bool = False):
     """
     Renders `what` to the current OpenGL context.
 
@@ -1755,6 +1862,10 @@ def draw_render(what, int drawable_width, int drawable_height, Matrix projection
         The projection matrix to use to transform from view space
         to the viewport.
 
+    `state_cache`
+        The GL2Draw's GLStateCache, used to avoid redundant GL state
+        changes during this render pass.
+
     `invert_front_face`
         If True, the front face is inverted, so that if "cw" is requested, "ccw" is used,
         and vice versa. Used when rendering to a texture.
@@ -1765,11 +1876,15 @@ def draw_render(what, int drawable_width, int drawable_height, Matrix projection
     current_invert_front_face = invert_front_face
     set_cull_face(None)
 
+    # Reset the GL state cache at the start of each render pass.
+    state_cache.reset()
+
     cdef GL2DrawingContext ctx = root_context
 
     ctx.width = drawable_width
     ctx.height = drawable_height
     ctx.debug = False
+    ctx.state_cache = state_cache
 
     ctx.projection_matrix.ctake(projection)
     ctx.view_matrix.ctake(IDENTITY)
@@ -1787,6 +1902,13 @@ def draw_render(what, int drawable_width, int drawable_height, Matrix projection
         ctx.properties["texture_scaling"] = "nearest"
 
     ctx.draw_one(what)
+
+    # Restore the GL state to Ren'Py's defaults after the render pass.
+    state_cache.set_blend(GL_FUNC_ADD, GL_FUNC_ADD, GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+    state_cache.set_color_mask(True, True, True, True)
+
+    # Disable all vertex attrib arrays.
+    state_cache.sync_attrib_arrays(0)
 
     while ctx is not None:
         ctx.uniforms = None

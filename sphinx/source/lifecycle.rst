@@ -20,7 +20,7 @@ Script Parsing Phase
 To read the game's code, Ren'Py reads each of the game's ``.rpy`` (and ``_ren.py``) files one by
 one. That's the "parsing" phase, or "early" phase. The order that files are read in is:
 
-1. Files inside :file:`renpy/common` are loaded using  using the full path, in unicode order. This is only for use by
+1. Files inside :file:`renpy/common` are loaded using the full path, in unicode order. This is only for use by
    Ren'Py.
 
 2. Only if :file:`game/libs/libs.txt` exists, files in :file:`game/libs` have the first directory removed, if any and
@@ -116,7 +116,7 @@ of config variables.
 Before Splashscreen
 -------------------
 
-The items in this  section at the start of Ren'Py, or after a return to the main menu. Notably, these
+The items in this section run at the start of Ren'Py, or after a return to the main menu. Notably, these
 still run even if the splashscreen is skipped.
 
 Before the splashscreen is shown, :ref:`default statements <default-statement>` are executed. Then,
@@ -157,10 +157,10 @@ screen in a new context.
 
 The In-game phase continues until either the player quits or restarts the game
 to return to the main menu. The game may be restarted by returning when no
-call is on the stack, as explained explained in :doc:`label`. The game may
+call is on the stack, as explained in :doc:`label`. The game may
 also be restarted by the :class:`MainMenu` action or the :func:`renpy.full_restart`
 function.
 
 When the game restarts, all non-persistent data is reset to what it was at the
-end of the script execution phase, and then the script execution phase begins
+end of the script init phase, and then the script execution phase begins
 again, skipping the splashscreen.

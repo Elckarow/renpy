@@ -27,6 +27,8 @@
 from __future__ import division, absolute_import, with_statement, print_function, unicode_literals
 from renpy.compat import PY2, basestring, bchr, bord, chr, open, pystr, range, round, str, tobytes, unicode  # *
 
+from typing import Literal
+
 import time
 import os
 import re
@@ -42,6 +44,19 @@ import renpy.audio.renpysound as renpysound
 
 # This is True if we were able to successfully enable the pcm audio.
 pcm_ok = None
+
+# Backend channel lifecycle states. The numeric values are part of the
+# private Cython/backend contract; callers should use these names.
+CHANNEL_STATE_IDLE = "idle"
+CHANNEL_STATE_PLAYING = "playing"
+CHANNEL_STATE_PAUSED = "paused"
+CHANNEL_STATE_ENDED = "ended"
+CHANNEL_STATES = {
+    0: CHANNEL_STATE_IDLE,
+    1: CHANNEL_STATE_PLAYING,
+    2: CHANNEL_STATE_PAUSED,
+    3: CHANNEL_STATE_ENDED,
+}
 
 unique = time.time()
 serial = 0
@@ -245,6 +260,7 @@ class Channel(object):
         movie,
         framedrop,
         synchro_start,
+        yuv_acceptable,
     ):
         # The name assigned to this channel. This is used to look up
         # information about the channel in the MusicContext object.
@@ -282,7 +298,7 @@ class Channel(object):
         self.synchro_start = False
 
         # Does this participate in synchro start by default.
-        self.default_synchro_start = synchro_start
+        self.default_synchro_start: bool | renpy.object.Sentinel = synchro_start
 
         # The time the music in this channel was last changed.
         self.last_changed = 0
@@ -316,6 +332,9 @@ class Channel(object):
         # Are we paused?
         self.paused = None
 
+        self.default_loop: bool
+        self.default_loop_set: bool
+
         if default_loop is NotSet:
             # By default, should we loop the music?
             self.default_loop = True
@@ -334,10 +353,14 @@ class Channel(object):
             else:
                 self.movie = renpy.audio.renpysound.NODROP_VIDEO
 
+            self.yuv_acceptable: bool = yuv_acceptable
+            "Is it acceptable if the video produces YUV frames?"
+
             if renpysound.is_webaudio:
                 renpysound.set_movie_channel(self.number, True)  # type: ignore
         else:
             self.movie = renpy.audio.renpysound.NO_VIDEO
+            self.yuv_acceptable = False
 
     def get_number(self):
         """
@@ -382,8 +405,9 @@ class Channel(object):
         context.music = mcd
 
         ctx = self.get_context().copy()
-
         mcd[self.name] = ctx
+
+        context.movie = dict(context.movie)
         return ctx
 
     def split_filename(self, filename: str | AudioData, looped: bool) -> tuple[str | AudioData, float, float, float]:
@@ -575,9 +599,9 @@ class Channel(object):
 
                 if self.movie != renpy.audio.renpysound.NO_VIDEO:
                     # Let the browser handle the video loop if any
-                    renpysound.set_video(self.number, self.movie, loop=(len(self.loop) == 1))
+                    renpysound.set_video(self.number, self.movie, loop=(len(self.loop) == 1), yuv=self.yuv_acceptable)
                 else:
-                    renpysound.set_video(self.number, self.movie, loop=False)
+                    renpysound.set_video(self.number, self.movie, loop=False, yuv=self.yuv_acceptable)
 
                 if depth == 0:
                     renpysound.play(
@@ -716,6 +740,22 @@ class Channel(object):
             else:
                 renpysound.fadeout(self.number, secs)
 
+            # Mark the movie as having ended.
+
+            context_movie = renpy.game.context().movie
+
+            if self.name in context_movie:
+                context_movie = dict(context_movie)
+                del context_movie[self.name]
+                renpy.game.context().movie = context_movie
+
+            last_channel_movie = renpy.display.video.last_channel_movie
+
+            if self.name in last_channel_movie:
+                last_channel_movie = dict(last_channel_movie)
+                del last_channel_movie[self.name]
+                renpy.display.video.last_channel_movie = last_channel_movie
+
     def reload(self):
         """
         Causes this channel to be stopped in a way that looped audio will be
@@ -761,6 +801,11 @@ class Channel(object):
         if synchro_start is None:
             synchro_start = self.default_synchro_start
 
+            # This case triggers when the default loop not being set causes the default synchro start to be
+            # NotSet.
+            if synchro_start is NotSet:
+                synchro_start = self.default_loop
+
         with lock:
             for filename in filenames:
                 if renpy.exports.is_seen_allowed():
@@ -799,7 +844,8 @@ class Channel(object):
 
         with lock:
             if self._number is not None:
-                rv = renpysound.playing_name(self.number)
+                if self.get_state() != CHANNEL_STATE_ENDED:
+                    rv = renpysound.playing_name(self.number)
 
             if rv is None and self.queue:
                 rv = self.queue[0].filename
@@ -808,6 +854,13 @@ class Channel(object):
                 rv = self.loop[0]
 
         return rv
+
+    def get_state(self):
+        """Returns the backend lifecycle state of this channel."""
+        if not pcm_ok or self._number is None:
+            return CHANNEL_STATE_IDLE
+
+        return CHANNEL_STATES.get(renpysound.get_state(self.number), CHANNEL_STATE_IDLE)
 
     def set_volume(self, volume):
         self.chan_volume = volume
@@ -829,6 +882,14 @@ class Channel(object):
             return 0.0
 
         return renpysound.get_duration(self.number)
+
+    def seek(self, position):
+        """Seeks this channel without reopening its media stream."""
+
+        if not pcm_ok or self._number is None:
+            return
+
+        renpysound.seek(self.number, position)
 
     def set_pan(self, pan, delay):
         with lock:
@@ -867,6 +928,12 @@ class Channel(object):
 
         return renpysound.read_video(self.number)
 
+    def read_video_yuv(self):
+        if not pcm_ok:
+            return None
+
+        return renpysound.read_video_yuv(self.number)
+
     def video_ready(self):
         if not pcm_ok:
             return 1
@@ -894,6 +961,7 @@ def register_channel(
     framedrop=True,
     force=False,
     synchro_start=None,
+    yuv_acceptable=False
 ):
     """
     :doc: audio
@@ -953,6 +1021,8 @@ def register_channel(
         this defaults to `loop` if `movie` is False, and False otherwise.
     """
 
+    # yuv_acceptable is used internally by Ren'Py to pass the yuv_acceptable flag.
+
     if name == "movie":
         movie = True
 
@@ -980,6 +1050,7 @@ def register_channel(
         movie=movie,
         framedrop=framedrop,
         synchro_start=synchro_start,
+        yuv_acceptable=yuv_acceptable,
     )
 
     c.mixer = mixer

@@ -365,6 +365,10 @@ missing_image_callback = None
 
 # Called to filter text in the say and menu statements.
 say_menu_text_filter = None
+say_menu_text_filters = []
+
+# Should menu text be filtered by say_menu_text_filter and say_menu_text_filters?
+use_menu_text_filter = True
 
 # Used to replace one label with another.
 label_overrides = {}
@@ -519,6 +523,9 @@ python_callbacks = []
 
 # If true, we dump information about a save upon save.
 save_dump = False
+
+# Same as save_dump, but only triggers when the save fails.
+failed_save_dump = True
 
 # Can we resize a gl window?
 gl_resize = True
@@ -713,7 +720,7 @@ always_shown_screens = []
 # A map from tag to the default layer that tag should be displayed on.
 tag_layer = {}
 
-# The default layer for tags not in in tag_layer.
+# The default layer for tags not in tag_layer.
 default_tag_layer = "master"
 
 # A map from tag to the default transform that's used for that tag.
@@ -792,7 +799,7 @@ enable_language_autodetect = False
 locale_to_language_function = None
 
 # The table used by the default locale_to_language_function.
-locale_to_language_map: dict[str, str] = { }
+locale_to_language_map: dict[str, str] = {}
 
 # Should we pass the full argument list to the say screen?
 old_say_args = False
@@ -1588,7 +1595,12 @@ mesh_pad_compat: bool = False
 Should mesh pad work the way it did before 8.4? (That is, it shifts things to the right/down by pad_left/pad_top.)
 """
 
-emscripten_preload_timeout: float|None = 5.0
+mesh_oversample: float = 8.0
+"""
+Determines how much mesh textures can be oversampled by. This, in turn, controls the maximum amount a mesh can be scaled up by before it introduces additional blurriness.
+"""
+
+emscripten_preload_timeout: float | None = 5.0
 """
 After this many second without being able to preload, the emscripten port will cause a preload even if doing
 so might cause a framerate stutter.
@@ -1631,7 +1643,7 @@ If True, the xmaximum and ymaximum properties can increase the space offered of 
 is offered by its container.
 """
 
-extend_like_characters: set[str] = { "extend" }
+extend_like_characters: set[str] = {"extend"}
 """
 A set of character names that will be treated like the "extend" character for the purpose of dialogue export.
 """
@@ -1646,10 +1658,48 @@ safe_text: bool = False
 If True, invalid text is displayed. If False, it's ignored.
 """
 
-special_directory_map: dict[str, list[str]] = { 'images' : [ 'images' ], 'audio' : [ 'audio' ], 'fonts' : [ 'fonts' ] }
+live2d_old_beziers: bool = False
+"""
+If True, live2d will use the old Bezier curve behavior, which usees easing. If False, the Cardano interpretation
+of beziers is used.
+"""
+
+special_directory_map: dict[str, list[str]] = {"images": ["images"], "audio": ["audio"], "fonts": ["fonts"]}
 """
 This maps the special directory names ('images', 'audio', 'fonts') to a list of directories that will
 be searched for that kind of file.
+"""
+
+font_size_adjust: dict[str, float | Callable[[str, float], float]] = {}
+"""
+A map from font name to a multiplier or function that's used to adjust the size of a font.
+"""
+
+scene_uses_tag_layer: bool = True
+"""
+If True, the scene statement will use the tag layer if a tag is known.
+"""
+
+renamed_files: dict[str, str] = {
+    "dejavusans.ttf": "dejavusans.woff2",
+    "dejavusans-bold.ttf": "dejavusans-bold.woff2",
+    "twemojicolrv0.ttf": "twemojicolrv0.woff2",
+    "_opendyslexic3-regular.ttf": "_opendyslexic3-regular.woff2",
+}
+"""
+A map from file names to new file names. This is used to handle files that have been renamed. The keys must be
+lower-case.
+"""
+
+windows_high_pixel_density: bool = bool(int(os.environ.get("RENPY_WINDOWS_HIGH_PIXEL_DENSITY", "1")))
+"""
+If true, Ren'Py will attempt to enable SDL3 high pixel densitiy on Windows. If false, it will not.
+"""
+
+after_init_callbacks: list[Callable[[], None]] = []
+"""
+A list of callbacks that are called at the very end of the init phase, before the game starts normal execution for the
+first time. These are run just after defaults are set up, but only once, and before script statements are run.
 """
 
 

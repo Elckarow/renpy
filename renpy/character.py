@@ -213,11 +213,21 @@ class CTCPauseHolder(renpy.display.displayable.Displayable):
 
         self.ctc = ctc
         self._duplicatable = ctc._duplicatable
+        self.rtl = False
+
+    def set_rtl(self, rtl):
+        if rtl != self.rtl:
+            self.rtl = rtl
+            renpy.display.render.invalidate(self)
 
     def render(self, width, height, st, at):
         cr = renpy.display.render.render(self.ctc, width, height, st, at)
-        rv = renpy.display.render.Render(0, cr.width)
-        rv.blit(cr, (0, 0))
+        rv = renpy.display.render.Render(0, cr.height)
+
+        if self.rtl:
+            rv.place(self.ctc, x=-cr.width, y=0, render=cr)
+        else:
+            rv.place(self.ctc, x=0, y=0, render=cr)
 
         return rv
 
@@ -666,7 +676,7 @@ def display_say(
         dtt = DialogueTextTags(what)
 
     if all_at_once:
-        afm_starts = [ dtt.afm_start[0] ]
+        afm_starts = [dtt.afm_start[0]]
         pause_start = [dtt.pause_start[0]]
         pause_end = [dtt.pause_end[-1]]
         pause_delay = [dtt.pause_delay[-1]]
@@ -815,20 +825,27 @@ def display_say(
 
             # What text is (screen, id, layer) tuple if we're using a screen.
             if isinstance(what_text, tuple):
+                screen_tag, widget_id, screen_layer = what_text
+
                 # If this is not the first pause, set the transform event to "replace".
                 if i != 0 and renpy.config.say_replace_event:
-                    screen_displayable = renpy.display.screen.get_screen(what_text[0], what_text[2])
+                    screen_displayable = renpy.display.screen.get_screen(screen_tag, screen_layer)
                     if screen_displayable is not None:
                         screen_displayable.set_transform_event("replace")
 
                         if not retain and not last_pause:
                             sls = renpy.game.context().scene_lists
-                            sls.set_transient_prefix(what_text[2], what_text[0], "replaced")
+                            sls.set_transient_prefix(screen_layer, screen_tag, "replaced")
 
-                slow_done.screen_tag = what_text[0]
-                slow_done.screen_layer = what_text[2]
+                slow_done.screen_tag = screen_tag
+                slow_done.screen_layer = screen_layer
 
-                what_text = renpy.display.screen.get_widget(what_text[0], what_text[1], what_text[2])
+                what_text = renpy.display.screen.get_widget(screen_tag, widget_id, screen_layer)
+
+                if what_text is None:
+                    exc = Exception(f"Could not find the widget with id {widget_id!r} on screen {screen_tag!r}.")
+                    exc.add_note(f'Did you forget to add id "{widget_id}" or put it under condition?')
+                    raise exc
 
             if not multiple:
                 afm_text_queue = [what_text]
@@ -845,9 +862,8 @@ def display_say(
                     raise Exception("The say screen (or show_function) must return a Text object.")
 
                 if what_ctc:
-                    if extend_text or not last_pause:
-                        if ctc_position == "nestled" or ctc_position == "nestled-close":
-                            what_ctc = CTCPauseHolder(what_ctc)
+                    if ctc_position == "nestled" or ctc_position == "nestled-close":
+                        what_ctc = CTCPauseHolder(what_ctc)
 
                     if ctc_position == "nestled":
                         what_text.set_ctc(what_ctc)
@@ -855,15 +871,6 @@ def display_say(
                         what_text.set_ctc([
                             "\ufeff",
                             what_ctc,
-                        ])
-
-                if (extend_text or not last_pause) and ctc:
-                    if ctc_position == "nestled":
-                        what_text.set_last_ctc(ctc)
-                    elif ctc_position == "nestled-close":
-                        what_text.set_last_ctc([
-                            "\ufeff",
-                            ctc,
                         ])
 
                 if what_text.text[0] == what_string:
@@ -904,7 +911,6 @@ def display_say(
                     had_exception = True
                     raise
                 finally:
-
                     pause_callback("interact_done", exception=had_exception)
 
                     if retain and what_ctc:
@@ -935,8 +941,6 @@ def display_say(
                 if not last_pause:
                     for i in renpy.config.say_sustain_callbacks:
                         i()
-
-
 
     except (renpy.game.JumpException, renpy.game.CallException) as e:
         exception = e

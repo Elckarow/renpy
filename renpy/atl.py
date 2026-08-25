@@ -176,8 +176,32 @@ def interpolate(t, a, b, typ):
     # If something is callable, call it and return the result.
     elif callable(b):
         a_origin = getattr(a, "origin", None)
-        rv = b(a_origin, t)
+
+        b_is_BaseMatrix = hasattr(b, "value")
+
+        # Pass a Matrix directly when `a` is a Matrix (from a previous interpolation)
+        # and `b` is a _BaseMatrix (class in store namespace, interpolates via `.value`).
+        # This allows _BaseMatrix.__call__ to use `a.origin_value` so that
+        # interpolation after an interruption (e.g. replaced by a new transform)
+        # continues from where the old one was interrupted.
+        # Other callables (SplineMatrix, user functions) keep the old behaviour.
+        if isinstance(a, renpy.display.matrix.Matrix) and b_is_BaseMatrix:
+            rv = b(a, t)
+        else:
+            rv = b(a_origin, t)
+
         rv.origin = b
+
+        # Record the effective value on the result Matrix, so a future
+        # interpolation can continue from here.
+        if b_is_BaseMatrix:
+            if isinstance(a, renpy.display.matrix.Matrix) and a.origin_value is not None:
+                rv.origin_value = a.origin_value + (b.value - a.origin_value) * t
+            elif a_origin is not None and hasattr(a_origin, "value"):
+                rv.origin_value = a_origin.value + (b.value - a_origin.value) * t
+            else:
+                rv.origin_value = b.value
+
         return rv
 
     # Interpolate everything else.
@@ -319,6 +343,7 @@ class Context(object):
     def __repr__(self):
         return "Context({})".format(repr(self.context))
 
+
 class ATLTransformBase(renpy.object.Object):
     """
     This is intended to be subclassed by ATLTransform. It takes care of
@@ -452,12 +477,13 @@ class ATLTransformBase(renpy.object.Object):
 
         super(ATLTransformBase, self).take_execution_state(t)  # type: ignore
 
+        if self is t:
+            return
+
         self.atl_st_offset = None
         self.atl_state = None
 
-        if self is t:
-            return
-        elif not isinstance(t, ATLTransformBase):
+        if not isinstance(t, ATLTransformBase):
             return
         elif t.atl is not self.atl:
             return
@@ -557,7 +583,6 @@ class ATLTransformBase(renpy.object.Object):
         #         scope[kwargs_param_name].update(var_kwargs)
         #     else:
         #         scope[kwargs_param_name] = var_kwargs
-
 
         scope.update(new_scope)
 
@@ -814,6 +839,9 @@ class Statement(renpy.object.Object):
     def visit(self):
         return []
 
+    def in_current_store(self):
+        return self
+
     # Does this respond to an event?
     def _handles_event(self, event):
         return False
@@ -906,6 +934,10 @@ class Block(Statement):
                 self.times.append((s.time, i + 1))
 
         self.times.sort()
+
+    def in_current_store(self):
+        statements = [i.in_current_store() for i in self.statements]
+        return Block(self.loc, statements)
 
     def _handles_event(self, event):
         for i in self.statements:
@@ -1350,6 +1382,10 @@ class Child(Statement):
 
         return "next", st, None
 
+    def in_current_store(self):
+        child = self.child._in_current_store()
+        return Child(self.loc, child, self.transition)
+
     def visit(self):
         return [self.child]
 
@@ -1681,6 +1717,10 @@ class Parallel(Statement):
         super(Parallel, self).__init__(loc)
         self.blocks = blocks
 
+    def in_current_store(self):
+        blocks = [i.in_current_store() for i in self.blocks]
+        return Parallel(self.loc, blocks)
+
     def _handles_event(self, event):
         for i in self.blocks:
             if i._handles_event(event):
@@ -1757,6 +1797,10 @@ class Choice(Statement):
         super(Choice, self).__init__(loc)
 
         self.choices = choices
+
+    def in_current_store(self):
+        choices = [(chance, block.in_current_store()) for chance, block in self.choices]
+        return Choice(self.loc, choices)
 
     def _handles_event(self, event):
         for i in self.choices:
@@ -1866,6 +1910,10 @@ class On(Statement):
         super(On, self).__init__(loc)
 
         self.handlers = handlers
+
+    def in_current_store(self):
+        handlers = {k: v.in_current_store() for k, v in self.handlers.items()}
+        return On(self.loc, handlers)
 
     def _handles_event(self, event):
         if event in self.handlers:
@@ -2116,7 +2164,7 @@ def parse_atl(l):
             animation = True
 
         else:
-            # If we can't assign it it a statement more specifically,
+            # If we can't assign it to a statement more specifically,
             # we try to parse it into a RawMultipurpose. That will
             # then be turned into another statement, as appropriate.
 

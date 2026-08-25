@@ -587,6 +587,9 @@ cdef class Render:
         self.width = width
         self.height = height
 
+        self.cropped_width = width
+        self.cropped_height = height
+
         self.layer_name = layer_name
 
         # A list of (surface/render, xoffset, yoffset, focus, main) tuples, ordered from
@@ -794,6 +797,9 @@ cdef class Render:
             self.depends_on_list.append(source)
             source.parents.add(self)
 
+            if source.text_input:
+                self.text_input = True
+
         return 0
 
     cpdef int subpixel_blit(Render self, source, tuple pos, object focus=True, object main=True, object index=None):
@@ -828,6 +834,9 @@ cdef class Render:
             self.depends_on_list.append(source)
             source.parents.add(self)
 
+            if source.text_input:
+                self.text_input = True
+
         return 0
 
     cpdef int absolute_blit(Render self, source, tuple pos, object focus=True, object main=True, object index=None):
@@ -861,6 +870,9 @@ cdef class Render:
         if isinstance(source, Render):
             self.depends_on_list.append(source)
             source.parents.add(self)
+
+            if source.text_input:
+                self.text_input = True
 
         return 0
 
@@ -921,7 +933,6 @@ cdef class Render:
         * The length of the overlap in pixels. (can be <= 0)
         """
 
-
         s_end = sx + sw
         c_end = cx + cw
 
@@ -965,8 +976,6 @@ cdef class Render:
             bw = w
             bh = h
 
-        rv = Render(w, h)
-
         reverse = self.reverse
 
         this = self
@@ -977,6 +986,10 @@ cdef class Render:
             this.add_shader("renpy.texture")
             this.blit(self, (0, 0), focus=focus, main=True)
             reverse = None
+
+        rv = Render(w, h)
+        rv.cropped_width = min(self.cropped_width - x, w)
+        rv.cropped_height = min(self.cropped_height - y, h)
 
         if ((reverse is not None) and
             (reverse.xdx != 1.0 or
@@ -1049,7 +1062,7 @@ cdef class Render:
 
                     crop = (cx, cy, cropw, croph)
                     newchild = child.subsurface(crop, focus=focus, subpixel=child_subpixel, bounds=(cbx, cby, cbw, cbh))
-                    newchild.render_of = child.render_of[:]
+                    # newchild.render_of = child.render_of[:]
                     newchild.xclipping = child.xclipping or newchild.xclipping
                     newchild.yclipping = child.yclipping or newchild.yclipping
 
@@ -1111,6 +1124,8 @@ cdef class Render:
         rv.properties = self.properties
 
         rv.text_input = self.text_input
+
+        rv.render_of = self.render_of[:]
 
         return rv
 
@@ -1204,6 +1219,10 @@ cdef class Render:
 
         self.cached_texture = None
         self.cached_model = None
+
+        # drop uniforms that hold Renders so killed renders release their textures
+        if self.uniforms_has_render:
+            self.uniforms = None
 
     NO_MOUSE_FOCUS = renpy.object.Sentinel("NO_MOUSE_FOCUS")
 
@@ -1463,14 +1482,14 @@ cdef class Render:
 
         rv = [ ]
 
-        if x < 0 or y < 0 or x >= self.width or y >= self.height:
+        if x < 0 or y < 0 or x >= self.cropped_width or y >= self.cropped_height:
             return rv
 
         is_screen = False
 
         if depth is not None:
             for d in self.render_of:
-                rv.append((depth, self.width, self.height, d))
+                rv.append((depth, self.cropped_width, self.cropped_height, d))
                 depth += 1
 
                 if isinstance(d, renpy.display.screen.ScreenDisplayable):

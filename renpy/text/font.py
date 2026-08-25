@@ -25,10 +25,7 @@ from renpy.compat import PY2, basestring, bchr, bord, chr, open, pystr, range, r
 
 import renpy.pygame as pygame
 
-try:
-    import xml.etree.ElementTree as etree
-except Exception:
-    pass
+import xml.etree.ElementTree as etree
 
 import renpy
 import os
@@ -37,12 +34,9 @@ import renpy.text.ftfont as ftfont
 
 ftfont.init()
 
-try:
-    import renpy.text.hbfont as hbfont
+import renpy.text.hbfont as hbfont
 
-    hbfont.init()
-except ImportError:
-    hbfont = None
+hbfont.init()
 
 import renpy.text.textsupport as textsupport
 
@@ -519,6 +513,7 @@ def register_sfont(
 
     sf = SFont(filename, spacewidth, default_kern, kerns, charset, baseline)
     image_fonts[(name, size, bold, italics)] = sf
+    image_font_names.add(name)
 
 
 def register_mudgefont(
@@ -585,7 +580,7 @@ def register_mudgefont(
 
     mf = MudgeFont(filename, xml, spacewidth, default_kern, kerns)
     image_fonts[(name, size, bold, italics)] = mf
-
+    image_font_names.add(name)
 
 def register_bmfont(name=None, size=None, bold=False, italics=False, underline=False, filename=None):
     """
@@ -626,6 +621,8 @@ def register_bmfont(name=None, size=None, bold=False, italics=False, underline=F
 
     bmf = BMFont(filename)
     image_fonts[(name, size, bold, italics)] = bmf
+    image_font_names.add(name)
+
 
 
 # A map from face name, shaper to ftfont.FTFace or hbfont.HBFace.
@@ -649,31 +646,10 @@ def load_face(fn, shaper):
 
     font_file = None
 
-    try:
-        font_file = renpy.loader.load(fn, directory="fonts")
-    except IOError:
-        if (not renpy.config.developer) or renpy.config.allow_sysfonts:
-            # Let's try to find the font on our own.
-            fonts = [i.strip().lower() for i in fn.split(",")]
-
-            pygame.sysfont.initsysfonts()
-
-            for v in pygame.sysfont.Sysfonts.values():  # type: ignore
-                if v is not None:
-                    for _flags, ffn in v.items():
-                        for i in fonts:
-                            if ffn.lower().endswith(i):
-                                font_file = open(ffn, "rb")
-                                break
-
-                        if font_file:
-                            break
-
-                if font_file:
-                    break
+    font_file = renpy.loader.load(fn, directory="fonts")
 
     if font_file is None:
-        raise Exception("Could not find font {0!r}.".format(orig_fn))
+        raise Exception("Could not find font {0!r}".format(orig_fn))
 
     if shaper == "harfbuzz":
         rv = hbfont.HBFace(font_file, index, orig_fn)
@@ -687,6 +663,9 @@ def load_face(fn, shaper):
 
 # Caches of fonts.
 image_fonts = {}
+
+# The set of names of image_fonts that are know.
+image_font_names = set()
 
 # A cache of scaled image fonts.
 scaled_image_fonts = {}
@@ -725,6 +704,13 @@ def get_font(fn, size, bold, italics, outline, antialias, vertical, hinting, sca
 
         return rv
 
+    font_size_adjust = renpy.config.font_size_adjust.get(fn, None)
+    if font_size_adjust is not None:
+        if callable(font_size_adjust):
+            size = font_size_adjust(fn, size)
+        else:
+            size = size * font_size_adjust
+
     features = None if features is None else tuple(sorted(features.items()))
 
     # Check for a cached TTF.
@@ -755,16 +741,20 @@ def get_font(fn, size, bold, italics, outline, antialias, vertical, hinting, sca
         hinting = renpy.config.font_hinting.get(None, "auto")
 
     # Load a TTF.
-    face = load_face(fn, shaper)
+    try:
+        face = load_face(fn, shaper)
+    except Exception as e:
+        if fn in image_font_names:
+            raise Exception(f"Font {fn!r} is an image font, but (size={size}, bold={bold}, italics={italics}) was not registered.") from None
+        else:
+            raise
 
     if shaper == "harfbuzz":
         rv = hbfont.HBFont(
             face, int(size * scale), bold, italics, outline, antialias, vertical, hinting, instance, axis, features
         )
     else:
-        rv = ftfont.FTFont(
-            face, int(size * scale), bold, italics, outline, antialias, vertical, hinting
-        )
+        rv = ftfont.FTFont(face, int(size * scale), bold, italics, outline, antialias, vertical, hinting)
 
     font_cache[key] = rv
 

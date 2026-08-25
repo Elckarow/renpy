@@ -26,7 +26,6 @@ from __future__ import division, absolute_import, with_statement, print_function
 from renpy.compat import PY2, basestring, bchr, bord, chr, open, pystr, range, round, str, tobytes, unicode  # *
 
 
-
 import renpy
 import renpy.pygame as pygame
 from renpy.display.render import render, Render, redraw
@@ -372,8 +371,8 @@ class Drag(renpy.display.displayable.Displayable, renpy.revertable.RevertableObj
         #  will use mouse coordinates to select droppable
         self.mouse_drop = mouse_drop
 
-        # We're focusable if we can be dragged.
-        self.focusable = draggable
+        # We're focusable if we can be interacted with in some way.
+        self.focusable = draggable or clicked or hovered or unhovered or activated or alternate
 
         self.child = None
 

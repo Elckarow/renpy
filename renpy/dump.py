@@ -127,6 +127,9 @@ def dump(error):
         filename = n.filename
         line = n.linenumber
 
+        if isinstance(name, renpy.ast.Node):
+            name = name.name
+
         if not isinstance(name, str):
             continue
 
@@ -240,15 +243,15 @@ def dump(error):
         pass
 
     result["test"] = {
-        "has_default_testcase" : renpy.test.testexecution.has_default_testcase(),
+        "has_default_testcase": renpy.test.testexecution.has_default_testcase(),
     }
 
-    filename = renpy.exports.fsdecode(args.json_dump)  # type: ignore
+    filename = args.json_dump
 
     if filename != "-":
         new = filename + ".new"
 
-        with open(new, "w") as f:
+        with open(new, "w", encoding="utf-8") as f:
             json.dump(result, f)
 
         if os.path.exists(filename):

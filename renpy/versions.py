@@ -19,13 +19,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from typing import TypedDict
-
+import collections
+import pathlib
 import site
 import socket
-import pathlib
 import subprocess
-import collections
+import sys
+from typing import TypedDict
 
 
 class Version:
@@ -50,9 +50,10 @@ class Version:
 
 branch_to_version: dict[str, Version] = {}
 
+
 Version("main", (8, 6, 0), "Real Artists Ship")
 
-Version("fix", (8, 5, 3), "In Good Health")
+Version("fix", (8, 5, 4), "We Can Go to the Moon")
 
 
 class VersionDict(TypedDict):
@@ -94,7 +95,7 @@ def _make_version_string(
     if dirty:
         suffixes.append("dirty")
 
-    if branch != "main" or dirty:
+    if not official and branch not in {"main", "master"}:
         suffixes.append(branch)
 
     return f"{major}.{minor}.{patch}.{commit:08d}+{'.'.join(suffixes)}"
@@ -145,7 +146,11 @@ def get_git_version(nightly: bool = False) -> VersionDict:
     """
 
     def get_output(args: list[str]) -> str:
-        return subprocess.check_output(args, encoding="utf-8").strip()
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        return subprocess.check_output(args, encoding="utf-8", creationflags=creationflags).strip()
 
     try:
         git_root = get_output(["git", "rev-parse", "--show-toplevel"])
@@ -204,6 +209,24 @@ def get_version() -> VersionDict:
         return vc_version
 
     return get_git_version()
+
+
+def get_release_version():
+    """
+    Returns the version of the last release. If this is a nightly release, returns the version of the fix branch,
+    minus one. (eg, if the fix branch is 8.5.3, returns 8.5.2). Otherwise, returns the version of the main branch,
+    without the suffix.
+
+    This is only intended for development use from a git checkout.
+    """
+
+    version = get_version()
+    version_tuple = tuple(map(int, version["version"].split(".")[:3]))
+
+    if version["nightly"] and version["branch"] == "fix" and version_tuple[2] > 0:
+        return "{}.{}.{}".format(version_tuple[0], version_tuple[1] - 1, version_tuple[2])
+    else:
+        return "{}.{}.{}".format(*version_tuple)
 
 
 def generate_vc_version(nightly: bool = False) -> VersionDict:

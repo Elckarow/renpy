@@ -82,7 +82,7 @@ init -1500 python:
 
 
     # Call this to specify the voice file that will be played for
-    # the user. This peice only gathers the information so
+    # the user. This piece only gathers the information so
     # voice_interact can play the right file.
     def voice(filename, tag=None):
         """
@@ -498,14 +498,14 @@ init -1500 python hide:
             if not config.skipping:
                 renpy.stop_tts()
                 renpy.music.get_channel("voice").set_volume(volume)
-                renpy.sound.play(_voice.play, channel="voice")
+                renpy.sound.play(_voice.play, channel="voice", synchro_start=False)
                 _invoke_voice_callbacks("stop")
                 _voice.playing_info = vi
                 _invoke_voice_callbacks("play")
 
             store._last_voice_play = _voice.play
 
-        elif not _voice.sustain:
+        elif not _voice.sustain and not (getattr(renpy.context(), "_menu", False) and _preferences.voice_after_game_menu):
             renpy.sound.stop(channel="voice")
             _invoke_voice_callbacks("stop")
             _voice.playing_info = None

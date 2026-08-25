@@ -3,7 +3,7 @@ Store Variables
 
 Ren'Py has a number of store variables that control its function. Store
 variables may be changed at any time. If a store variable is changed after
-the game has started, it will be be saved and loaded by the save system,
+the game has started, it will be saved and loaded by the save system,
 and rolled-back when rollback occurs.
 
 .. var:: adv = Character(...)
@@ -92,8 +92,14 @@ and rolled-back when rollback occurs.
 
 .. var:: mouse_visible = True
 
-    Controls if the mouse is visible. This is automatically set to true when
-    entering the standard game menus.
+    Controls if the mouse is visible. There are three values:
+
+    - "always" - The mouse is always visible.
+    - True - The mouse is visible when moved, but hides after :var:`config.mouse_hide_time` seconds of inactivity, or
+      after controller input.
+    - False - The mouse is never visible.
+
+    If false whe entering the game menu, mouse_visible will be set to true upon entry and restored upon exit.
 
 .. var:: name_only = Character(...)
 

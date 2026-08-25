@@ -27,6 +27,11 @@ cdef class Matrix:
     # When this matrix is generated, where it was generated from.
     cdef public object origin
 
+    # When a callable matrix is interpolated, the effective value that produced
+    # this matrix. Used so a subsequent (possibly interrupted) interpolation can
+    # continue from the current value rather than the previous target.
+    cdef public object origin_value
+
     # The inverse of this Matrix.
     cdef Matrix inverse_cache
 
@@ -79,6 +84,9 @@ cdef class Matrix:
         self.wdz = other.wdz
         self.wdw = other.wdw
 
+        self.inverse_cache = None
+        self.transpose_cache = None
+
     cdef Matrix inplace_multiply(Matrix self, Matrix other)
     cdef Matrix inplace_offset(Matrix self, float xo, float yo)
     cdef Matrix inplace_reverse_offset(Matrix self, float xo, float yo)
@@ -112,3 +120,8 @@ cdef class Matrix:
 
 cdef class Matrix2D(Matrix):
     pass
+
+cdef class MatrixStack(Matrix):
+    cdef MatrixStack child
+
+    cdef MatrixStack get_child(self)

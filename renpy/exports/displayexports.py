@@ -556,7 +556,7 @@ def hide(name, layer=None):
         renpy.config.missing_hide(name, layer)
 
 
-def scene(layer="master"):
+def scene(layer=None, tag=None):
     """
     :doc: se_images
 
@@ -572,7 +572,14 @@ def scene(layer="master"):
 
         $ renpy.scene()
         $ renpy.show("bg beach")
+
+    `tag`
+        If not None and `layer` is None, the default later for the tag is used.
+        Otherwise, `layer` defaults to "master".
     """
+
+    if tag is not None and renpy.config.scene_uses_tag_layer:
+        layer = default_layer(layer, tag)
 
     if layer is None:
         layer = "master"
@@ -660,10 +667,10 @@ def screenshot_to_bytes(size):
     return renpy.game.interface.screenshot_to_bytes(size)
 
 
-def transition(trans, layer=None, always=False, force=False):
+def transition(trans, layer=None, always=False, force=False, priority=0):
     """
     :doc: other
-    :args: (trans, layer=None, always=False)
+    :args: (trans, layer=None, always=False, priority=0)
 
     Sets the transition that will be used during the next interaction.
 
@@ -674,11 +681,15 @@ def transition(trans, layer=None, always=False, force=False):
     `always`
         If false, this respects the transition preference. If true, the
         transition is always run.
+
+    `priority`
+        The priority of this transition.  Lower-priority transitions will not replace higher-priority transitions
+        for the same layer.
     """
 
     if isinstance(trans, dict):
         for ly, t in trans.items():
-            transition(t, layer=ly, always=always, force=force)
+            transition(t, layer=ly, always=always, force=force, priority=priority)
         return
 
     if (not always) and not renpy.game.preferences.transitions:  # type: ignore
@@ -687,7 +698,7 @@ def transition(trans, layer=None, always=False, force=False):
     if renpy.config.skipping:
         trans = None
 
-    renpy.game.interface.set_transition(trans, layer, force=force)
+    renpy.game.interface.set_transition(trans, layer, force=force, priority=priority)
 
 
 def get_transition(layer=None):
@@ -797,7 +808,7 @@ def get_at_list(name, layer=None):
     return list(transforms)
 
 
-def show_layer_at(at_list, layer="master", reset=True, camera=False):
+def show_layer_at(at_list, layer="master", reset=None, camera=False):
     """
     :doc: se_images
     :name: renpy.show_layer_at
@@ -809,7 +820,11 @@ def show_layer_at(at_list, layer="master", reset=True, camera=False):
         If true, the transform state is reset to the start when it is shown.
         If false, the transform state is persisted, allowing the new transform
         to update that state.
+        If None, true for show layer and false for camera.
     """
+
+    if reset is None:
+        reset = not camera
 
     at_list = renpy.easy.to_list(at_list)
 
@@ -1175,7 +1190,10 @@ def get_mouse_pos():
     current touch location. If the device does not support a mouse and is not
     currently being touched, x and y are numbers, but not meaningful.
     """
-    return renpy.display.draw.get_mouse_pos()
+    if renpy.test.testexecution.is_in_test():
+        return renpy.test.testmouse.get_mouse_pos()
+    else:
+        return renpy.display.draw.get_mouse_pos()
 
 
 def set_mouse_pos(x, y, duration=0):
@@ -1417,7 +1435,7 @@ def get_mouse_names():
     """
 
     if not renpy.display.interface:
-        return [ "default" ]
+        return ["default"]
 
     return renpy.display.interface.get_mouse_names()
 

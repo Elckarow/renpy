@@ -64,7 +64,7 @@ def report(msg, *args):
     else:
         out = ""
 
-    out += msg % args
+    out += (msg % args) if args else msg
     print("")
     print(out)
 
@@ -440,6 +440,9 @@ def check_hide(node):
 
 
 def check_with(node):
+    if node.expr is None:
+        return
+
     try_eval("a with statement or clause", node.expr, "Perhaps you forgot to declare, or misspelled, a transition?")
 
 
@@ -468,9 +471,13 @@ def quote_text(s):
     return '"' + s + '"'
 
 
-def text_checks(s):
-    if renpy.config.say_menu_text_filter is not None:
-        s = renpy.config.say_menu_text_filter(s)
+def text_checks(s, menu_text=False):
+    if (not menu_text) or renpy.config.use_menu_text_filter:
+        if renpy.config.say_menu_text_filter is not None:
+            s = renpy.config.say_menu_text_filter(s)
+
+        for f in renpy.config.say_menu_text_filters:
+            s = f(s)
 
     msg = renpy.text.extras.check_text_tags(s, check_unclosed=args.check_unclosed_tags)
     if msg:
@@ -581,7 +588,7 @@ def check_menu(node):
         if c:
             try_compile("in the if clause of a menuitem", c)
 
-        text_checks(l)
+        text_checks(l, menu_text=True)
 
 
 def check_jump(node):
@@ -928,6 +935,7 @@ def check_unreachables(all_nodes):
         TranslateSay,
         Return,
         EndTranslate,
+        Testcase,
         RPY,
     )
 
@@ -968,10 +976,14 @@ def check_unreachables(all_nodes):
             weakly_reachable.add(node)
 
         elif isinstance(node, (Translate, TranslateSay)):
-            # If a block with missing id exists, it is orpahn translation.
+            # If a block with missing id exists, it is an orphan translation.
             # We don't report it there, but later in the lint.
             if node.language is not None:
                 weakly_reachable.add(node)
+
+                if isinstance(node, Translate):
+                    for n in node.block:
+                        weakly_reachable.add(n)
 
         elif isinstance(node, (Return, EndTranslate)):
             weakly_reachable.add(node)
@@ -1003,6 +1015,9 @@ def check_unreachables(all_nodes):
                 if node in unreachable:
                     to_check.append(node)
 
+        elif isinstance(node, Testcase):
+            weakly_reachable.add(node)
+
         elif isinstance(node, RPY):
             weakly_reachable.add(node)
 
@@ -1033,12 +1048,7 @@ def check_python_warnings():
     Reports Python warnings.
     """
 
-    warnings = []
-
-    for k, v in renpy.game.script.bytecode_newcache.items():
-        if isinstance(k, tuple) and k[0] == "warnings":
-            warnings.extend(v)
-
+    warnings = [w for value in renpy.python.compile_cache.warnings.values() for w in value]
     if not warnings:
         return
 

@@ -192,6 +192,13 @@ def save(slotname, extra_info="", mutate_flag=False, include_screenshot=True, ex
         except Exception:
             pass
 
+        if renpy.config.failed_save_dump and not renpy.config.save_dump:
+            try:
+                dump_paths("save_dump.txt", **{"renpy.game.log": renpy.game.log}, **roots)
+            except Exception:
+                renpy.display.log.write("While writing save_dump.txt:")
+                renpy.display.log.exception()
+
         raise
 
     if mutate_flag and renpy.revertable.mutate_flag:
@@ -223,6 +230,16 @@ def save(slotname, extra_info="", mutate_flag=False, include_screenshot=True, ex
 
     location.scan()
     clear_slot(slotname)
+
+    # Save callbacks may do I/O (cloud sync, telemetry); a callback
+    # failure must not break the local save flow, so we log and
+    # continue. (after_load_callbacks etc. let exceptions propagate;
+    # the divergence here is intentional.)
+    for cb in renpy.config.save_callbacks:
+        try:
+            cb(slotname)
+        except Exception:
+            renpy.display.log.exception()
 
 
 # The thread used for autosave.

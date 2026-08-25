@@ -236,7 +236,13 @@ init 1 python in editor:
         fei.append(FancyEditorInfo(
             3,
             _("Visual Studio Code (System)"),
-            _("Uses a copy of Visual Studio Code that you have installed outside of Ren'Py. It's recommended you install the language-renpy extension to add support for Ren'Py files."),
+            _("Uses a copy of Visual Studio Code that you have installed outside of Ren'Py. It's recommended you install the renpy.language-renpy extension to add support for Ren'Py files."),
+            ))
+
+        fei.append(FancyEditorInfo(
+            3,
+            _("VSCodium (System)"),
+            _("Uses a copy of VSCodium that you have installed outside of Ren'Py. It's recommended you install the renpy.language-renpy extension to add support for Ren'Py files."),
             ))
 
         fei.append(FancyEditorInfo(
@@ -246,7 +252,7 @@ init 1 python in editor:
             None))
 
         for k in editors:
-            if k in [ "Visual Studio Code", "Visual Studio Code (System)", "Atom", "jEdit", "System Editor", "None" ]:
+            if k in [ "Visual Studio Code", "Visual Studio Code (System)", "VSCodium (System)", "Atom", "jEdit", "System Editor", "None" ]:
                 continue
 
             fei.append(FancyEditorInfo(
@@ -290,7 +296,7 @@ init 1 python in editor:
             if i.name == persistent.editor:
                 if i.installed and i.name in editors:
                     ei = editors[i.name]
-                    os.environ["RENPY_EDIT_PY"] = renpy.fsencode(os.path.abspath(ei.filename))
+                    os.environ["RENPY_EDIT_PY"] = os.path.abspath(ei.filename)
                     error_message = i.error_message
                     break
 
@@ -389,7 +395,7 @@ init 1 python in editor:
                 return True
 
             fn = project.current.unelide_filename(self.filename)
-            return os.path.exists(renpy.fsencode(fn))
+            return os.path.exists(fn)
 
         def __call__(self):
 
@@ -437,7 +443,7 @@ init 1 python in editor:
             if not self.check:
                 return True
 
-            return os.path.exists(renpy.fsencode(self.filename))
+            return os.path.exists(self.filename)
 
         def __call__(self):
 

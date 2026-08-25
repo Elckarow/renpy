@@ -170,7 +170,15 @@ def what_filter(s):
 
 class DialogueFile(object):
     def __init__(
-        self, filename, output, tdf=True, strings=False, notags=True, escape=True, language=None
+        self,
+        filename,
+        output,
+        tdf=True,
+        strings=False,
+        notags=True,
+        escape=True,
+        language=None,
+        menu_statements=tuple(),
     ):
         """
         `filename`
@@ -202,6 +210,7 @@ class DialogueFile(object):
         self.escape = escape
         self.strings = strings
         self.language = language
+        self.menu_statements = menu_statements
 
         self.f = open(output, "a", encoding="utf-8")
 
@@ -264,10 +273,20 @@ class DialogueFile(object):
                         what = what.replace("\n", "\\n")
 
                     if self.tdf:
-                        lines.append([t.identifier, who, what, n.filename, str(n.linenumber), n.get_code(what_filter)])
+                        line = [t.identifier, who, what, n.filename, str(n.linenumber), n.get_code(what_filter)]
 
                     else:
-                        lines.append([what])
+                        line = [what]
+
+                    lines.append((t.linenumber, line))
+
+        for m in self.menu_statements:
+            for label, _condition, block in m.items:
+                if block is not None:
+                    continue
+
+                line = ["<menu caption>", "", label, m.filename, str(m.linenumber), what_filter(label)]
+                lines.append((m.linenumber, line))
 
         if self.strings:
             lines.extend(self.get_strings())
@@ -275,9 +294,9 @@ class DialogueFile(object):
             # If we're tab-delimited, we have line number info, which means we
             # can sort the list so everything's in order, for menus and stuff.
             if self.tdf:
-                lines.sort(key=lambda x: int(x[4]))
+                lines.sort(key=lambda x: x[0])
 
-        for line in lines:
+        for _source_line, line in lines:
             self.f.write("\t".join(line) + "\n")
 
     def get_strings(self):
@@ -318,10 +337,10 @@ class DialogueFile(object):
                 s = s.replace("\n", "\\n")
 
             if self.tdf:
-                lines.append(["", "", s, filename, str(line)])
+                lines.append((line, ["", "", s, filename, str(line)]))
 
             else:
-                lines.append([s])
+                lines.append((line, [s]))
 
         return lines
 
@@ -366,6 +385,13 @@ def dialogue_command():
 
             f.write("\t".join(line) + "\n")
 
+    import collections
+
+    menu_statements = collections.defaultdict(list)
+    for n in renpy.game.script.namemap.values():
+        if isinstance(n, renpy.ast.Menu):
+            menu_statements[n.filename].append(n)
+
     for dirname, filename in renpy.loader.listdirfiles():
         if dirname is None:
             continue
@@ -379,8 +405,18 @@ def dialogue_command():
         language = args.language
         if language in ("None", ""):
             language = None
+
+        elided_filename = renpy.lexer.elide_filename(filename)
+
         DialogueFile(
-            filename, output, tdf=tdf, strings=args.strings, notags=args.notags, escape=args.escape, language=language
+            filename,
+            output,
+            tdf=tdf,
+            strings=args.strings,
+            notags=args.notags,
+            escape=args.escape,
+            language=language,
+            menu_statements=menu_statements[elided_filename],
         )
 
     return False

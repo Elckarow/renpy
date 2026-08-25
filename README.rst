@@ -17,8 +17,8 @@ The following branches are the most interesting.
     merged into master on a regular basis.
 
     Pull requests that contain fixes or documentation improvements should be
-    made to the fix branch. When a release is made, the master branch is
-    copied to the fix branch.
+    made to the fix branch. When a feature release is made (for example, going from 8.6.x to 8.7.0),
+    the master branch is copied to the fix branch. Fix releases are made from this branch.
 
 ``master``
     The master branch is where the main focus of development is. This branch
@@ -27,6 +27,18 @@ The following branches are the most interesting.
     Pull requests that contain new features, that require incompatible changes,
     or major changes to Ren'Py's internals should be targeted at the master
     branch.
+
+    Feature releases are made from this branch.
+
+``work/``
+    Work branches contain work that that is intended to be merged into master or fix - pull requests, or pull requests
+    to be. These branches should start with work/<username>/ , or work/shared/ for work shared equally between multiple
+    contributors.
+
+    A github rule enforces that new branches much start  with work/.
+
+``history/``
+    Branches beginning with history/ contain commits that for various reasons are not included in the github interface.
 
 
 Getting Started
@@ -118,7 +130,7 @@ link in a nightly build, or compile the modules as described above. You'll
 also need the `Sphinx <https://www.sphinx-doc.org>`_ documentation generator.
 If you have pip working, install Sphinx using::
 
-    pip install -U sphinx sphinx_rtd_theme sphinx_rtd_dark_mode
+    pip install -U sphinx sphinx_rtd_theme sphinx_rtd_dark_mode sphinx-tabs
 
 Once Sphinx is installed, change into the ``sphinx`` directory inside the
 Ren'Py checkout and run::
@@ -130,7 +142,8 @@ Format
 
 Ren'Py's documentation consists of reStructuredText files found in sphinx/source, and
 generated documentation found in function docstrings scattered throughout the code. Do
-not edit the files in sphinx/source/inc directly, as they will be overwritten.
+not edit the files in the ``sphinx/source/inc`` folder directly, as they will be
+overwritten.
 
 Docstrings may include tags on the first few lines:
 
@@ -178,9 +191,37 @@ https://lemmasoft.renai.us/forums/viewtopic.php?p=321603#p321603
 Contributing
 ============
 
-For bug fixes, documentation improvements, and simple changes, just
-make a pull request. For more complex changes, it might make sense
-to file an issue first so we can discuss the design.
+For bug fixes, documentation improvements, and simple changes, just make a pull request. For nontrivial changes,
+please file an issue first so we can discuss the planned change.
+
+
+Efficiency Tools (including Language Models)
+============================================
+
+The goal of Ren'Py is to provide tools that enable human creativity in the form of visual novels and similar styles
+of games. In service of this goal, developers may use tools that increase their efficiency, including tools that use
+language models.
+
+Every change to Ren'Py must be created by a human that understands both the change, the
+portions of Ren'Py affected by this change, and the copyright implications of the change. Examples of uses of
+efficiency tools that we consider appropriate include completion where the human only accepts suggestions that
+they understand and that are correct, and prompts that cause changes that can be immediately
+reviewed by a human for correctness. Larger changes may be created by prompting for smaller changes with reviews
+at each step.
+
+We do not accept changes where a human does not fully understand the change and how it affects Ren'Py. Large changes
+made with minimal human review ("vibe coding") are not acceptable. If you'd like to make such a change, it's better to
+just bring the idea to us on GitHub and let us make the change. Changes made by agents without human review are not
+acceptable.
+
+Our use of AI is intended to not require disclosure in the
+`Steam Content Survey <https://partner.steamgames.com/doc/gettingstarted/contentsurvey#5>`_. Specifically, we
+don't use diffusion models or other techniques to generate game content consumed by players, and we do not require
+creators to use any AI tools, or provide any such tools for creators to use.
+
+As a special case, we allow machine translation of system messages when there is no human translator for the language.
+When a human translator becomes available, their work takes precedence. This exception allows system messages to be
+translated to improve accessibility.
 
 License
 =======
@@ -188,3 +229,11 @@ License
 For the complete licensing terms, please read:
 
 https://www.renpy.org/doc/html/license.html
+
+By contributing to Ren'Py, you agree to license your contributions under the MIT license. When contributing, you may
+choose to:
+
+* Retain copyright in your contribution. If you choose this, please "Copyright (year) Your Name <your email>" in the
+  copyright notice for any file you change.
+* Assign copyright in your contribution to Tom Rothamel <pytom@bishoujo.us>. This is assumed to be the default if
+  you don't specify otherwise.

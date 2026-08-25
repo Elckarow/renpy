@@ -457,7 +457,7 @@ class SceneLists(renpy.object.Object):
             l.insert(add_index, sle)
 
         # By walking the tree of displayables we allow the displayables to
-        # capture the current state. In older code, we allow this to to fail.
+        # capture the current state. In older code, we allow this to fail.
         # Errors might exist in older games, which are ignored when not in
         # developer mode.
         try:
@@ -618,6 +618,10 @@ class SceneLists(renpy.object.Object):
             self.layer_at_list[layer] = (None, [])
 
     def set_layer_at_list(self, layer, at_list, reset=True, camera=False):
+
+        if not at_list:
+            reset = True
+
         if camera:
             self.camera_list[layer] = (None, list(at_list))
         else:
